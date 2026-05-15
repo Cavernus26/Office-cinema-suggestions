@@ -10,6 +10,11 @@ import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 const configFiles = import.meta.glob('../../firebase-applet-config.json', { eager: true });
 const localConfig = (configFiles['../../firebase-applet-config.json'] as any)?.default;
 
+/**
+ * Firebase Config Strategy:
+ * 1. Try VITE_ prefixed environment variables (best for Vercel/CI).
+ * 2. Fallback to localConfig (only exists in AI Studio / Local Dev).
+ */
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || localConfig?.apiKey,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || localConfig?.authDomain,
@@ -21,21 +26,20 @@ const firebaseConfig = {
 
 const databaseId = import.meta.env.VITE_FIREBASE_DATABASE_ID || localConfig?.firestoreDatabaseId || "(default)";
 
-// Warn if configuration is missing (useful for debugging in Vercel)
-if (!firebaseConfig.apiKey) {
-  console.warn(
-    "Firebase configuration is missing! Set VITE_FIREBASE_API_KEY and others in your environment variables. " +
-    "If you are using AI Studio, check your project configuration."
-  );
-}
+// Validation helper for production
+const isConfigValid = !!(firebaseConfig.apiKey && firebaseConfig.projectId);
 
 // Only initialize if we have at least an API key to avoid immediate crash during build or boot
 // If configuration is missing, we create a placeholder app that will fail gracefully when used
 const app = (getApps().length === 0) 
-  ? (firebaseConfig.apiKey 
+  ? (isConfigValid 
       ? initializeApp(firebaseConfig) 
-      : initializeApp({ apiKey: "none", authDomain: "none", projectId: "none" }, "placeholder"))
+      : initializeApp({ apiKey: "missing", authDomain: "missing", projectId: "missing" }, "placeholder"))
   : getApp();
+
+if (!isConfigValid && import.meta.env.PROD) {
+  console.error("CRITICAL: Firebase configuration is missing in production! You must set VITE_FIREBASE_API_KEY and other environment variables in Vercel.");
+}
 
 export const db = getFirestore(app, databaseId);
 export const auth = getAuth(app);
