@@ -77,33 +77,37 @@ service cloud.firestore {
       // List for duplicate cleanup logic: only allowed if querying by name matching current user's name
       // and for leaderboard (top recsCount)
       allow list: if isSignedIn() && (
-        resource.data.name == request.auth.token.name || 
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+        (resource.data.name != null && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
          resource.data.name == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.name) ||
         resource.data.recsCount != null
       );
 
       allow create: if isOwner(userId) && isValidUser(incoming());
       
-      allow update: if isSignedIn() && isOwner(userId) && (
+      allow update: if isSignedIn() && (isOwner(userId) || isNameMatch(existing().name)) && (
         // Action: Update profile stats or avatar (currently watching etc)
-        // Note: we don't call isValidUser on update here because it merged fields check hasAll which might fail if only updating partials
-        // unless we use getAfter() but standard is affectedKeys check
         incoming().diff(existing()).affectedKeys().hasOnly(['avatar', 'watchedCount', 'recsCount', 'avgRating', 'currentlyWatching', 'avgRecommendationRating', 'totalRecommendationRatingSum', 'totalRecommendationRatingCount'])
       );
       
-      allow delete: if isOwner(userId);
+      allow delete: if isOwner(userId) || isNameMatch(existing().name);
     }
 
     match /usernames/{name} {
-      allow read: if isSignedIn();
+      allow get: if isSignedIn();
       allow create: if isSignedIn() && isValidUsernameIndex(incoming());
       allow update: if isSignedIn() && (
         // Re-claim: Must have old passcode matching
         (existing().passcode == incoming().passcode && incoming().diff(existing()).affectedKeys().hasOnly(['ownerId'])) ||
         // Owner update: can change ownerId or passcode
-        (existing().ownerId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['ownerId', 'passcode']))
+        (existing().ownerId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['ownerId', 'passcode'])) ||
+        // Migration support
+        (isNameMatch(name))
       );
+    }
+
+    function isNameMatch(authorName) {
+      let path = /databases/$(database)/documents/users/$(request.auth.uid);
+      return isSignedIn() && exists(path) && get(path).data.name == authorName;
     }
 
     match /recommendations/{recId} {
@@ -117,6 +121,8 @@ service cloud.firestore {
         // Owner update
         (existing().authorId == request.auth.uid && isValidRecommendation(incoming()) && 
          incoming().diff(existing()).affectedKeys().hasOnly(['title', 'comment', 'posterPath', 'backdropPath', 'year', 'runtime', 'seasons', 'episodesCount'])) ||
+        // Migration update (changing owner to current UID if names match)
+        (isNameMatch(existing().authorName) && incoming().authorId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['authorId'])) ||
         // Cache updates from reactions/actions (system-like)
         (incoming().diff(existing()).affectedKeys().hasOnly(['reactionsCount', 'averageRating', 'ratingCount']))
       );

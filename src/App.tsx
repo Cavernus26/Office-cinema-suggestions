@@ -31,7 +31,7 @@ const LoginScreen = () => {
       if (err.message === 'WRONG_PASSCODE') {
         setError('Incorrect passcode for this name!');
       } else if (err.message === 'USERNAME_TAKEN') {
-        setError('That name is already claimed!');
+        setError('This name is already owned by someone else! Try a different name or your correct passcode.');
       } else if (err.code === 'permission-denied') {
         setError('Database permission error. Please try a different name.');
       } else {

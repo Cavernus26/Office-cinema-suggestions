@@ -16,6 +16,11 @@ export interface TMDBResult {
   vote_average?: number;
 }
 
+interface SearchParams {
+  query: string;
+  api_key: string;
+}
+
 export const tmdbService = {
   search: async (query: string): Promise<TMDBResult[]> => {
     try {

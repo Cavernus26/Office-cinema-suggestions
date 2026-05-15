@@ -57,33 +57,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const userRef = doc(db, 'users', user.uid);
       
       // 2. Check if username is already taken
-      const usernameDoc = await getDoc(usernameRef).catch(err => handleFirestoreError(err, OperationType.GET, `usernames/${usernameId}`));
+      const usernameDoc = await getDoc(usernameRef).catch(err => {
+        console.error("Username check failed:", err);
+        handleFirestoreError(err, OperationType.GET, `usernames/${usernameId}`);
+      });
       
+      let isReturningUser = false;
+
       if (usernameDoc && usernameDoc.exists()) {
         const data = usernameDoc.data();
+        console.log(`Checking existing name "${name}" owned by ${data.ownerId}, provided passcode: ${passcode === data.passcode ? 'MATCH' : 'MISMATCH'}`);
         if (data.ownerId !== user.uid) {
-          // Verify passcode if someone else owns it
+          // If the name is taken by a different UID:
+          // 1. Check if user provided the correct passcode to "log in"
           if (data.passcode !== passcode) {
-            throw new Error('WRONG_PASSCODE');
+            console.warn(`Username "${name}" is taken and passcode was incorrect.`);
+            throw new Error('USERNAME_TAKEN');
           }
-          // Correct passcode: Re-claim ownership for this session
-          // We'll update the ownerId along with the profile update below to avoid multiple writes
+          console.log(`Username "${name}" correctly claimed by providing matching passcode.`);
+          isReturningUser = true;
+        } else {
+          console.log(`Current session already owns the username "${name}".`);
+          isReturningUser = true;
         }
+      } else {
+        console.log(`Username "${name}" is available. Claiming it now...`);
       }
       
+      // 3. Prepare profile
+      const userDoc = await getDoc(userRef).catch(() => null);
+      const existingData = userDoc?.exists() ? userDoc.data() : null;
+
       const profileData = {
         name,
-        passcode,
-        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`,
-        watchedCount: 0,
-        recsCount: 0,
-        avgRating: 0,
-        createdAt: serverTimestamp(),
+        passcode, // Keep passcode in profile for easy re-auth/verification if needed
+        avatar: existingData?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`,
+        watchedCount: existingData?.watchedCount || 0,
+        recsCount: existingData?.recsCount || 0,
+        avgRating: existingData?.avgRating || 0,
+        createdAt: existingData?.createdAt || serverTimestamp(),
+        updatedAt: serverTimestamp(),
       };
       
-      // Use a transaction or sequential writes to reserve the name
       try {
+        // Reserve/Update the name
         await setDoc(usernameRef, { ownerId: user.uid, passcode }, { merge: true });
+        // Update user profile
         await setDoc(userRef, profileData);
         setProfile(profileData);
       } catch (err) {

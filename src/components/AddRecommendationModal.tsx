@@ -31,6 +31,11 @@ export const AddRecommendationModal: React.FC<AddModalProps> = ({ isOpen, onClos
       try {
         const searchResults = await tmdbService.search(query);
         setResults(searchResults.slice(0, 5));
+        if (searchResults.length === 0 && query.trim().length >= 2) {
+          console.warn('Search returned no results. Check backend logs and TMDB_API_KEY environment variable.');
+        }
+      } catch (err) {
+        console.error('Search component error:', err);
       } finally {
         setIsSearching(false);
       }

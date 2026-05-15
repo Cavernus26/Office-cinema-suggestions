@@ -5,21 +5,34 @@ import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 // Firebase configuration using environment variables for maximum compatibility.
 // When deploying to Vercel or other platforms, you must set these variables in your project settings.
 // Variables MUST be prefixed with VITE_ to be accessible in the browser.
-// Firebase configuration.
-// For local development in AI Studio, we use the provisioned config.
-// For production (e.g. Vercel), we prefer environment variables.
+
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyCVUIFhkM_MoCblkufS2zc-SJPBIFFNQRg",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "gen-lang-client-0360989628.firebaseapp.com",
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "gen-lang-client-0360989628",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "gen-lang-client-0360989628.firebasestorage.app",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "424666330214",
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:424666330214:web:84a06022b6b03b970aa9a7",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-const databaseId = import.meta.env.VITE_FIREBASE_DATABASE_ID || "ai-studio-b68dd6e7-00fe-4b0f-8f31-f1d418015040";
+const databaseId = import.meta.env.VITE_FIREBASE_DATABASE_ID || "(default)";
 
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+// Warn if configuration is missing (useful for debugging in Vercel)
+if (!firebaseConfig.apiKey) {
+  console.warn(
+    "Firebase configuration is missing! Set VITE_FIREBASE_API_KEY and others in your environment variables. " +
+    "If you are using AI Studio, check your .env file."
+  );
+}
+
+// Only initialize if we have at least an API key to avoid immediate crash during build or boot
+// If configuration is missing, we create a placeholder app that will fail gracefully when used
+const app = (getApps().length === 0) 
+  ? (firebaseConfig.apiKey 
+      ? initializeApp(firebaseConfig) 
+      : initializeApp({ apiKey: "none", authDomain: "none", projectId: "none" }, "placeholder"))
+  : getApp();
+
 export const db = getFirestore(app, databaseId);
 export const auth = getAuth(app);
 
