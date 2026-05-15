@@ -7,9 +7,9 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
+const app = express();
+
+async function createServer() {
   const TMDB_API_KEY = process.env.TMDB_API_KEY;
   const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
   const BASE_URL = 'https://api.themoviedb.org/3';
@@ -86,16 +86,28 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
+    // In production (Vercel/Local), we serve the static files from dist
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
+    // Important for SPA: Fallback to index.html for unknown routes
     app.get('*', (req, res) => {
+      // Avoid infinite loop if index.html is missing
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  return app;
+}
+
+// Start listener only if not running in a serverless environment (like Vercel functions)
+if (process.env.NODE_ENV !== "production" || !process.env.VERCEL) {
+  createServer().then((app) => {
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
   });
 }
 
-startServer();
+export default app;
+export { createServer };
