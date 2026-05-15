@@ -6,22 +6,26 @@ import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 // When deploying to Vercel or other platforms, you must set these variables in your project settings.
 // Variables MUST be prefixed with VITE_ to be accessible in the browser.
 
+// Safe check for local config (ignored by git) to support local preview without leaking keys.
+const configFiles = import.meta.glob('../../firebase-applet-config.json', { eager: true });
+const localConfig = (configFiles['../../firebase-applet-config.json'] as any)?.default;
+
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || localConfig?.apiKey,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || localConfig?.authDomain,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || localConfig?.projectId,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || localConfig?.storageBucket,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || localConfig?.messagingSenderId,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || localConfig?.appId,
 };
 
-const databaseId = import.meta.env.VITE_FIREBASE_DATABASE_ID || "(default)";
+const databaseId = import.meta.env.VITE_FIREBASE_DATABASE_ID || localConfig?.firestoreDatabaseId || "(default)";
 
 // Warn if configuration is missing (useful for debugging in Vercel)
 if (!firebaseConfig.apiKey) {
   console.warn(
     "Firebase configuration is missing! Set VITE_FIREBASE_API_KEY and others in your environment variables. " +
-    "If you are using AI Studio, check your .env file."
+    "If you are using AI Studio, check your project configuration."
   );
 }
 
