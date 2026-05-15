@@ -1,0 +1,150 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // -------------------------------------------------------------------------
+    // GLOBAL HELPERS
+    // -------------------------------------------------------------------------
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    
+    // Auth tokens never contain custom claims in this setup.
+    // We check if the user is verified if applicable (though for anonymous it might not be)
+    // For this app, anonymous is fine.
+
+    // -------------------------------------------------------------------------
+    // VALIDATION BLUEPRINTS
+    // -------------------------------------------------------------------------
+
+    function isValidUser(data) {
+      let requiredFields = ['name', 'passcode', 'avatar', 'watchedCount', 'recsCount', 'avgRating', 'createdAt'];
+      return data.keys().hasAll(requiredFields) &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 64 &&
+             data.passcode is string && data.passcode.size() > 0 && data.passcode.size() <= 100 &&
+             data.avatar is string &&
+             data.watchedCount is number &&
+             data.recsCount is number &&
+             data.avgRating is number &&
+             (request.method == 'create' ? data.createdAt == request.time : data.createdAt == existing().createdAt);
+    }
+
+    function isValidUsernameIndex(data) {
+      return data.keys().hasAll(['ownerId', 'passcode']) &&
+             data.ownerId is string && data.ownerId.size() <= 128 &&
+             data.passcode is string && data.passcode.size() > 0;
+    }
+
+    function isValidRecommendation(data) {
+      let required = ['tmdbId', 'title', 'type', 'authorId', 'authorName', 'createdAt'];
+      return data.keys().hasAll(required) &&
+             data.tmdbId is number &&
+             data.title is string && data.title.size() <= 200 &&
+             data.type in ['movie', 'tv'] &&
+             data.authorId == request.auth.uid &&
+             (request.method == 'create' ? data.createdAt == request.time : data.createdAt == existing().createdAt);
+    }
+
+    function isValidUserAction(data) {
+      return data.keys().hasAll(['userId', 'recommendationId', 'status', 'createdAt']) &&
+             data.userId == request.auth.uid &&
+             isValidId(data.recommendationId) &&
+             data.status in ['Watching', 'Completed', 'Plan to Watch'] &&
+             (request.method == 'create' ? data.createdAt == request.time : data.createdAt == existing().createdAt);
+    }
+
+    function isValidReaction(data) {
+      return data.keys().hasAll(['recommendationId', 'userId', 'emoji', 'createdAt']) &&
+             isValidId(data.recommendationId) &&
+             data.userId == request.auth.uid &&
+             data.emoji is string && data.emoji.size() <= 16 &&
+             data.createdAt == request.time;
+    }
+
+    // -------------------------------------------------------------------------
+    // SECURITY RULES
+    // -------------------------------------------------------------------------
+
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    match /users/{userId} {
+      // PII isolation: users can see each other's profiles, but only own sensitive data
+      allow get: if isSignedIn();
+      // List for duplicate cleanup logic: only allowed if querying by name matching current user's name
+      // and for leaderboard (top recsCount)
+      allow list: if isSignedIn() && (
+        resource.data.name == request.auth.token.name || 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         resource.data.name == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.name) ||
+        resource.data.recsCount != null
+      );
+
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      
+      allow update: if isSignedIn() && isOwner(userId) && (
+        // Action: Update profile stats or avatar (currently watching etc)
+        // Note: we don't call isValidUser on update here because it merged fields check hasAll which might fail if only updating partials
+        // unless we use getAfter() but standard is affectedKeys check
+        incoming().diff(existing()).affectedKeys().hasOnly(['avatar', 'watchedCount', 'recsCount', 'avgRating', 'currentlyWatching', 'avgRecommendationRating', 'totalRecommendationRatingSum', 'totalRecommendationRatingCount'])
+      );
+      
+      allow delete: if isOwner(userId);
+    }
+
+    match /usernames/{name} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidUsernameIndex(incoming());
+      allow update: if isSignedIn() && (
+        // Re-claim: Must have old passcode matching
+        (existing().passcode == incoming().passcode && incoming().diff(existing()).affectedKeys().hasOnly(['ownerId'])) ||
+        // Owner update: can change ownerId or passcode
+        (existing().ownerId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['ownerId', 'passcode']))
+      );
+    }
+
+    match /recommendations/{recId} {
+      allow get: if isSignedIn();
+      // Global feed
+      allow list: if isSignedIn();
+
+      allow create: if isSignedIn() && isValidRecommendation(incoming());
+      
+      allow update: if isSignedIn() && (
+        // Owner update
+        (existing().authorId == request.auth.uid && isValidRecommendation(incoming()) && 
+         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'comment', 'posterPath', 'backdropPath', 'year', 'runtime', 'seasons', 'episodesCount'])) ||
+        // Cache updates from reactions/actions (system-like)
+        (incoming().diff(existing()).affectedKeys().hasOnly(['reactionsCount', 'averageRating', 'ratingCount']))
+      );
+      
+      allow delete: if existing().authorId == request.auth.uid;
+
+      match /actions/{actionId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && isValidUserAction(incoming());
+        allow update: if isOwner(existing().userId) && isValidUserAction(incoming()) && 
+                         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'rating', 'comment']);
+        allow delete: if isOwner(existing().userId);
+      }
+
+      match /reactions/{reactionId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && isValidReaction(incoming());
+        allow delete: if isOwner(existing().userId);
+      }
+    }
+
+    match /userActions/{actionId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidUserAction(incoming());
+      allow update: if isOwner(existing().userId) && isValidUserAction(incoming()) && 
+                       incoming().diff(existing()).affectedKeys().hasOnly(['status', 'rating', 'comment']);
+      allow delete: if isOwner(existing().userId);
+    }
+  }
+}

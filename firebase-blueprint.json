@@ -1,0 +1,109 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user profile in the CineShare app.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "The user's display name." },
+        "passcode": { "type": "string", "description": "Owner set passcode." },
+        "avatar": { "type": "string", "description": "URL to the user's avatar image." },
+        "watchedCount": { "type": "number", "description": "Total movies/shows watched." },
+        "recsCount": { "type": "number", "description": "Total recommendations given." },
+        "avgRating": { "type": "number", "description": "Average rating given by others to this user's recs." },
+        "avgRecommendationRating": { "type": "number", "description": "Average score across all recommendations." },
+        "totalRecommendationRatingSum": { "type": "number", "description": "Sum of all ratings received." },
+        "totalRecommendationRatingCount": { "type": "number", "description": "Total number of ratings received." },
+        "currentlyWatching": {
+          "type": "object",
+          "properties": {
+            "title": { "type": "string" },
+            "id": { "type": "string" }
+          },
+          "description": "The item the user is currently watching."
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "createdAt"]
+    },
+    "Recommendation": {
+      "title": "Recommendation",
+      "description": "A movie or TV show recommendation shared with coworkers.",
+      "type": "object",
+      "properties": {
+        "tmdbId": { "type": "number", "description": "TMDB ID of the movie or show." },
+        "title": { "type": "string", "description": "Title of the movie or show." },
+        "type": { "type": "string", "enum": ["movie", "tv"], "description": "Type of content." },
+        "posterPath": { "type": "string", "description": "Path to the poster image on TMDB." },
+        "backdropPath": { "type": "string", "description": "Path to the backdrop image on TMDB." },
+        "year": { "type": "string", "description": "Release year." },
+        "comment": { "type": "string", "description": "The recommender's personal comment." },
+        "authorId": { "type": "string", "description": "UID of the user who recommended it." },
+        "authorName": { "type": "string", "description": "Name of the user who recommended it." },
+        "runtime": { "type": "number", "description": "Runtime in minutes (movies)." },
+        "seasons": { "type": "number", "description": "Number of seasons (TV)." },
+        "episodesCount": { "type": "number", "description": "Total number of episodes (TV)." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "reactionsCount": { "type": "number", "description": "Cache for total reactions." },
+        "averageRating": { "type": "number", "description": "Average community rating (1-5)." },
+        "ratingCount": { "type": "number", "description": "Total number of community ratings." }
+      },
+      "required": ["tmdbId", "title", "type", "authorId", "createdAt"]
+    },
+    "UserAction": {
+      "title": "UserAction",
+      "description": "Tracks a user's interaction with a recommendation (watch status, rating).",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "UID of the user performing the action." },
+        "userName": { "type": "string", "description": "Name of the user." },
+        "recommendationId": { "type": "string", "description": "ID of the recommendation document." },
+        "status": { "type": "string", "enum": ["Watching", "Completed", "Plan to Watch"], "description": "Current watch status." },
+        "rating": { "type": "number", "description": "Rating out of 10." },
+        "comment": { "type": "string", "description": "Optional reaction comment." },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "recommendationId", "createdAt"]
+    },
+    "Reaction": {
+      "title": "Reaction",
+      "description": "Simple emoji reaction to a recommendation.",
+      "type": "object",
+      "properties": {
+        "recommendationId": { "type": "string" },
+        "userId": { "type": "string" },
+        "emoji": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["recommendationId", "userId", "emoji", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles."
+    },
+    "/usernames/{name}": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "ownerId": { "type": "string" },
+          "passcode": { "type": "string" }
+        }
+      },
+      "description": "Atomic username index to prevent duplicates."
+    },
+    "/recommendations/{recId}": {
+      "schema": "Recommendation",
+      "description": "Global feed of movie recommendations."
+    },
+    "/recommendations/{recId}/actions/{actionId}": {
+      "schema": "UserAction",
+      "description": "Interactions (status, ratings) for a specific recommendation."
+    },
+    "/recommendations/{recId}/reactions/{reactionId}": {
+      "schema": "Reaction",
+      "description": "Emoji reactions for a specific recommendation."
+    }
+  }
+}
