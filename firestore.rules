@@ -85,7 +85,8 @@ service cloud.firestore {
       allow create: if isSignedIn() && (isOwner(userId) || isNameOwner(userId)) && isValidUser(incoming());
       
       allow update: if isSignedIn() && (isOwner(userId) || isNameOwner(userId) || isNameMatch(existing().name)) && (
-        incoming().diff(existing()).affectedKeys().hasOnly(['avatar', 'watchedCount', 'recsCount', 'avgRating', 'currentlyWatching', 'avgRecommendationRating', 'totalRecommendationRatingSum', 'totalRecommendationRatingCount', 'uid'])
+        // Allow updating stats or profile data
+        incoming().diff(existing()).affectedKeys().hasOnly(['name', 'nameLower', 'passcode', 'avatar', 'watchedCount', 'recsCount', 'avgRating', 'currentlyWatching', 'avgRecommendationRating', 'totalRecommendationRatingSum', 'totalRecommendationRatingCount', 'uid', 'updatedAt', 'createdAt'])
       );
       
       allow delete: if isOwner(userId) || isNameOwner(userId);
@@ -95,9 +96,9 @@ service cloud.firestore {
       allow get: if true;
       allow create: if isSignedIn() && isValidUsernameIndex(incoming());
       allow update: if isSignedIn() && (
-        // Re-claim: Must have old passcode matching
-        (existing().passcode == incoming().passcode && incoming().diff(existing()).affectedKeys().hasOnly(['ownerId'])) ||
-        // Owner update
+        // Re-claim: Passcode matches and changing ownerId
+        (existing().passcode == incoming().passcode && incoming().diff(existing()).affectedKeys().hasOnly(['ownerId', 'passcode'])) ||
+        // Owner update: Current owner changing passcode or ownerId
         (existing().ownerId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['ownerId', 'passcode']))
       );
     }
