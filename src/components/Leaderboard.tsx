@@ -45,10 +45,10 @@ export const Leaderboard: React.FC = () => {
     return (b.avgRecommendationRating || 0) - (a.avgRecommendationRating || 0);
   });
 
-  // Find the Curator (absolute highest avgRecommendationRating among active users)
-  const curator = [...users]
-    .filter(u => (u.totalRecommendationRatingCount || 0) >= 1) // At least 1 rating
-    .sort((a, b) => (b.avgRecommendationRating || 0) - (a.avgRecommendationRating || 0))[0];
+  // Find the Curator from the deduplicated and sorted list
+  const curator = sortedUsers
+    .filter((u: any) => (u.totalRecommendationRatingCount || 0) >= 1)
+    .sort((a: any, b: any) => (b.avgRecommendationRating || 0) - (a.avgRecommendationRating || 0))[0];
 
   return (
     <div className="w-full space-y-4 pb-12">

@@ -1,5 +1,6 @@
 export interface UserProfile {
   name: string;
+  nameLower?: string;
   passcode?: string;
   avatar: string;
   watchedCount: number;
