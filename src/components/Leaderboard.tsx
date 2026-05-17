@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, query, limit, onSnapshot, orderBy } from 'firebase/firestore';
+import { useAuth } from '../contexts/AuthContext';
 import { UserProfile } from '../types';
 import { Trophy, Medal, Target, CheckCircle, Send, Crown, Star, Play } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 export const Leaderboard: React.FC = () => {
+  const { profile, user: authUser } = useAuth();
   const [users, setUsers] = useState<any[]>([]);
 
   useEffect(() => {
@@ -25,8 +27,8 @@ export const Leaderboard: React.FC = () => {
       acc[nameKey] = current;
     } else {
       // Keep the one with more recommendations or currently active session
-      const isCurrentSession = current.id === auth.currentUser?.uid;
-      const isPrevSessionCurrent = acc[nameKey].id === auth.currentUser?.uid;
+      const isCurrentSession = current.id === profile?.nameLower || current.uid === authUser?.uid;
+      const isPrevSessionCurrent = acc[nameKey].id === profile?.nameLower || acc[nameKey].uid === authUser?.uid;
       
       if (isCurrentSession) {
         acc[nameKey] = current;
@@ -64,13 +66,14 @@ export const Leaderboard: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {sortedUsers.map((user) => {
           const isCurator = curator && user.id === curator.id;
+          const isMe = user.id === profile?.nameLower || user.uid === authUser?.uid;
           
           return (
             <div 
               key={user.id} 
               className={cn(
                 "p-4 rounded-2xl bg-slate-900/50 border border-slate-800 backdrop-blur-sm flex flex-col gap-4 group hover:border-yellow-400/30 transition-all duration-300",
-                user.id === auth.currentUser?.uid && "ring-1 ring-yellow-400/50 bg-slate-800/80",
+                isMe && "ring-1 ring-yellow-400/50 bg-slate-800/80",
                 isCurator && "ring-1 ring-yellow-500 bg-yellow-500/5 shadow-[0_0_20px_rgba(234,179,8,0.1)]"
               )}
             >
@@ -95,7 +98,7 @@ export const Leaderboard: React.FC = () => {
                 <div className="flex-1 min-w-0">
                   <h3 className="text-sm font-black text-slate-100 uppercase truncate tracking-wide">
                     {user.name}
-                    {user.id === auth.currentUser?.uid && <span className="ml-2 text-[8px] bg-yellow-400 text-slate-950 px-1.5 py-0.5 rounded-full">YOU</span>}
+                    {isMe && <span className="ml-2 text-[8px] bg-yellow-400 text-slate-950 px-1.5 py-0.5 rounded-full">YOU</span>}
                   </h3>
                   {user.currentlyWatching && (
                     <div className="flex items-center gap-1 mt-0.5 text-indigo-400">
