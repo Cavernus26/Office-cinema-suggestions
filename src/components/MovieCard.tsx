@@ -25,14 +25,14 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
     return unsub;
   }, [rec.id]);
 
-  const userAction = profile ? actions.find(a => a.userName.toLowerCase() === profile.nameLower) : null;
+  const userAction = user ? actions.find(a => a.userId === user.uid) : null;
   const completedCount = actions.filter(a => a.status === 'Completed').length;
   const watchingCount = actions.filter(a => a.status === 'Watching').length;
 
   const handleStatusChange = async (newStatus: WatchStatus | null) => {
     if (!user || !profile) return;
-    const actionId = `${profile.nameLower}_${rec.id}`;
-    const actionPath = `recommendations/${rec.id}/actions/${profile.nameLower}`;
+    const actionId = `${user.uid}_${rec.id}`;
+    const actionPath = `recommendations/${rec.id}/actions/${user.uid}`;
     const userActionPath = `userActions/${actionId}`;
     
     // Get existing status to handle transitions
@@ -111,11 +111,11 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
   const handleRating = async (rating: number) => {
     if (!user || !profile) return;
     
-    const actionPath = `recommendations/${rec.id}/actions/${profile.nameLower}`;
-    const userActionPath = `userActions/${profile.nameLower}_${rec.id}`;
+    const actionPath = `recommendations/${rec.id}/actions/${user.uid}`;
+    const userActionPath = `userActions/${user.uid}_${rec.id}`;
     const recRef = doc(db, 'recommendations', rec.id);
-    const authorId = rec.authorId || rec.authorName.toLowerCase().trim(); // compatibility
-    const authorRef = doc(db, 'users', authorId);
+    const authorId = rec.authorId;
+    const authorRef = authorId ? doc(db, 'users', authorId) : null;
     
     const oldRating = userAction?.rating || 0;
     if (oldRating === rating) return;
@@ -151,7 +151,7 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
         });
 
         // Update Author Stats
-        if (authorDoc.exists()) {
+        if (authorRef && authorDoc.exists()) {
           const authorData = authorDoc.data();
           let newAuthorSum = (authorData.totalRecommendationRatingSum || 0) - oldRating + rating;
           let newAuthorCount = (authorData.totalRecommendationRatingCount || 0) + (oldRating === 0 ? 1 : 0);
@@ -381,7 +381,7 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
         <div className="mt-4 mb-2 flex flex-col items-center justify-center gap-2 py-2 rounded-2xl bg-slate-950/60 border border-white/5 ring-1 ring-inset ring-white/5 shadow-inner">
           <div className="flex items-center gap-2.5">
             {[1, 2, 3, 4, 5].map((star) => {
-              const isAuthor = profile?.nameLower === rec.authorId || profile?.nameLower === rec.authorName.toLowerCase();
+              const isAuthor = user?.uid === rec.authorId || profile?.name.toLowerCase() === rec.authorName.toLowerCase();
               return (
                 <button
                   key={star}

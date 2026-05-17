@@ -73,13 +73,13 @@ export const AddRecommendationModal: React.FC<AddModalProps> = ({ isOpen, onClos
       await addDoc(collection(db, 'recommendations'), recData).catch(err => handleFirestoreError(err, OperationType.CREATE, 'recommendations'));
       
       // Increment user's rec count
-      if (profile) {
-        const userRef = doc(db, 'users', profile.nameLower);
-        const userDoc = await getDoc(userRef).catch(err => handleFirestoreError(err, OperationType.GET, `users/${profile.nameLower}`));
+      if (auth.currentUser) {
+        const userRef = doc(db, 'users', auth.currentUser.uid);
+        const userDoc = await getDoc(userRef).catch(err => handleFirestoreError(err, OperationType.GET, `users/${auth.currentUser?.uid}`));
         if (userDoc && userDoc.exists()) {
           await updateDoc(userRef, {
             recsCount: (userDoc.data().recsCount || 0) + 1
-          }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `users/${profile.nameLower}`));
+          }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `users/${auth.currentUser?.uid}`));
         }
       }
 

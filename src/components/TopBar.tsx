@@ -12,9 +12,9 @@ export const TopBar: React.FC<{ onOpenAdd: () => void }> = ({ onOpenAdd }) => {
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
 
   const handleSelectAvatar = async (avatarUrl: string) => {
-    if (!profile) return;
+    if (!user) return;
     try {
-      await updateDoc(doc(db, 'users', profile.nameLower), { avatar: avatarUrl });
+      await updateDoc(doc(db, 'users', user.uid), { avatar: avatarUrl });
     } catch (err) {
       console.error(err);
     }

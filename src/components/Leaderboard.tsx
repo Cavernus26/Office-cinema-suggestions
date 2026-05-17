@@ -27,8 +27,8 @@ export const Leaderboard: React.FC = () => {
       acc[nameKey] = current;
     } else {
       // Keep the one with more recommendations or currently active session
-      const isCurrentSession = current.id === profile?.nameLower || current.uid === authUser?.uid;
-      const isPrevSessionCurrent = acc[nameKey].id === profile?.nameLower || acc[nameKey].uid === authUser?.uid;
+      const isCurrentSession = current.id === authUser?.uid || current.uid === authUser?.uid;
+      const isPrevSessionCurrent = acc[nameKey].id === authUser?.uid || acc[nameKey].uid === authUser?.uid;
       
       if (isCurrentSession) {
         acc[nameKey] = current;
@@ -66,7 +66,7 @@ export const Leaderboard: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {sortedUsers.map((user) => {
           const isCurator = curator && user.id === curator.id;
-          const isMe = user.id === profile?.nameLower || user.uid === authUser?.uid;
+          const isMe = user.id === authUser?.uid || user.uid === authUser?.uid;
           
           return (
             <div 

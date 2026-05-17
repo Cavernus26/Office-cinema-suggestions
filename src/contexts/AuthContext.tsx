@@ -26,10 +26,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       setUser(user);
       
-      if (user && savedName) {
-        // Auto-recover profile if we have a saved name
-        const usernameId = savedName.toLowerCase().trim();
-        const userRef = doc(db, 'users', usernameId);
+      if (user) {
+        // Fetch profile by current UID
+        const userRef = doc(db, 'users', user.uid);
         
         unsubscribeProfile = onSnapshot(userRef, (docSnap) => {
           if (docSnap.exists()) {
@@ -55,23 +54,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       const usernameId = name.toLowerCase().trim();
       const usernameRef = doc(db, 'usernames', usernameId);
-      const userRef = doc(db, 'users', usernameId); // Use usernameId instead of user.uid for persistent profile
+      const userRef = doc(db, 'users', user.uid); // Revert to using UID for the profile
       
-      const usernameDoc = await getDoc(usernameRef).catch(err => {
-        console.error("Username check failed:", err);
-        handleFirestoreError(err, OperationType.GET, `usernames/${usernameId}`);
-      });
+      const usernameDoc = await getDoc(usernameRef).catch(() => null);
       
-      let isReturningUser = false;
-
       if (usernameDoc && usernameDoc.exists()) {
         const data = usernameDoc.data();
         if (data.ownerId !== user.uid) {
           if (data.passcode !== passcode) {
             throw new Error('USERNAME_TAKEN');
           }
-          // Matching passcode - we allow this user to "take over" the name
-          // In a real app we'd link accounts, here we just use the name-based userRef
+          // Passcode matches, "claiming" the name for this new UID
         }
       }
       
@@ -81,9 +74,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const profileData = {
         name,
-        nameLower: usernameId,
-        passcode,
-        uid: user.uid, // Store current UID
+        passcode, // Keep it for reclaiming if needed
         avatar: existingData?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`,
         watchedCount: existingData?.watchedCount || 0,
         recsCount: existingData?.recsCount || 0,
@@ -92,22 +83,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updatedAt: serverTimestamp(),
       };
       
-      try {
-        const batch = writeBatch(db);
-        
-        // Reserve/Update the name
-        batch.set(usernameRef, { ownerId: user.uid, passcode }, { merge: true });
-        
-        // Update user profile (keyed by username)
-        batch.set(userRef, profileData, { merge: true });
-        
-        await batch.commit();
-        
-        localStorage.setItem('office_cinema_name', name);
-        setProfile(profileData);
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `users/${usernameId} or usernames/${usernameId}`);
-      }
+      const batch = writeBatch(db);
+      // Link name to this UID
+      batch.set(usernameRef, { ownerId: user.uid, passcode }, { merge: true });
+      // Create/Update profile at UID path
+      batch.set(userRef, profileData, { merge: true });
+      
+      await batch.commit();
+
+      localStorage.setItem('office_cinema_name', name);
+      localStorage.setItem('office_cinema_uid', user.uid); // Store UID for easier recovery
+      setProfile(profileData);
     } catch (error) {
       console.error('AuthContext Login failed:', error);
       if (error instanceof Error && (error.message !== 'WRONG_PASSCODE' && error.message !== 'USERNAME_TAKEN')) {

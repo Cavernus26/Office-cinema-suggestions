@@ -10,146 +10,89 @@ service cloud.firestore {
     function existing() { return resource.data; }
     function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
     
-    // Auth tokens never contain custom claims in this setup.
-    // We check if the user is verified if applicable (though for anonymous it might not be)
-    // For this app, anonymous is fine.
-
-    // -------------------------------------------------------------------------
-    // VALIDATION BLUEPRINTS
-    // -------------------------------------------------------------------------
-
-    function isValidUser(data) {
-      let requiredFields = ['name', 'passcode', 'avatar', 'watchedCount', 'recsCount', 'avgRating', 'createdAt'];
-      return data.keys().hasAll(requiredFields) &&
-             data.name is string && data.name.size() > 0 && data.name.size() <= 64 &&
-             data.passcode is string && data.passcode.size() > 0 && data.passcode.size() <= 100 &&
-             data.avatar is string &&
-             data.watchedCount is number &&
-             data.recsCount is number &&
-             data.avgRating is number &&
-             (request.method == 'create' ? data.createdAt == request.time : data.createdAt == existing().createdAt);
-    }
-
-    function isValidUsernameIndex(data) {
-      return data.keys().hasAll(['ownerId', 'passcode']) &&
-             data.ownerId == request.auth.uid &&
-             data.passcode is string && data.passcode.size() > 0;
-    }
-
-    function isValidRecommendation(data) {
-      let required = ['tmdbId', 'title', 'type', 'authorId', 'authorName', 'createdAt'];
-      return data.keys().hasAll(required) &&
-             data.tmdbId is number &&
-             data.title is string && data.title.size() <= 200 &&
-             data.type in ['movie', 'tv'] &&
-             data.authorId == request.auth.uid &&
-             (request.method == 'create' ? data.createdAt == request.time : data.createdAt == existing().createdAt);
-    }
-
-    function isValidUserAction(data) {
-      return data.keys().hasAll(['userId', 'recommendationId', 'status', 'createdAt']) &&
-             (data.userId == request.auth.uid || isNameOwner(data.userName)) &&
-             isValidId(data.recommendationId) &&
-             data.status in ['Watching', 'Completed', 'Plan to Watch'] &&
-             (request.method == 'create' ? data.createdAt == request.time : data.createdAt == existing().createdAt);
-    }
-
-    function isValidReaction(data) {
-      return data.keys().hasAll(['recommendationId', 'userId', 'emoji', 'createdAt']) &&
-             isValidId(data.recommendationId) &&
-             data.userId == request.auth.uid &&
-             data.emoji is string && data.emoji.size() <= 16 &&
-             data.createdAt == request.time;
-    }
-
-    // -------------------------------------------------------------------------
-    // SECURITY RULES
-    // -------------------------------------------------------------------------
-
-    // Global Safety Net
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
     function isNameOwner(name) {
       let lowerName = name.toLower();
       let usernamePath = /databases/$(database)/documents/usernames/$(lowerName);
       return isSignedIn() && exists(usernamePath) && get(usernamePath).data.ownerId == request.auth.uid;
     }
 
-    match /users/{userId} {
-      // Allow profiles to be keyed by either UID (legacy) or username (new persistence model)
-      allow get: if isSignedIn();
-      allow list: if isSignedIn();
+    function isNameMatch(authorName) {
+      return isNameOwner(authorName.toLower());
+    }
 
-      allow create: if isSignedIn() && (isOwner(userId) || isNameOwner(userId) || incoming().uid == request.auth.uid) && isValidUser(incoming());
-      
-      allow update: if isSignedIn() && (isOwner(userId) || isNameOwner(userId) || isNameMatch(existing().name)) && (
-        // Allow updating stats or profile data
-        incoming().diff(existing()).affectedKeys().hasOnly(['name', 'nameLower', 'passcode', 'avatar', 'watchedCount', 'recsCount', 'avgRating', 'currentlyWatching', 'avgRecommendationRating', 'totalRecommendationRatingSum', 'totalRecommendationRatingCount', 'uid', 'updatedAt', 'createdAt'])
-      );
-      
-      allow delete: if isOwner(userId) || isNameOwner(userId);
+    // -------------------------------------------------------------------------
+    // VALIDATION
+    // -------------------------------------------------------------------------
+
+    function isValidUser(data) {
+      let requiredFields = ['name', 'avatar', 'watchedCount', 'recsCount', 'avgRating', 'createdAt'];
+      return data.keys().hasAll(requiredFields) &&
+             data.name is string && data.name.size() > 0 &&
+             data.avatar is string &&
+             data.watchedCount is number &&
+             data.recsCount is number &&
+             data.avgRating is number;
+    }
+
+    function isValidRecommendation(data) {
+      let required = ['tmdbId', 'title', 'type', 'authorId', 'authorName', 'createdAt'];
+      return data.keys().hasAll(required) &&
+             data.tmdbId is number &&
+             data.title is string &&
+             data.type in ['movie', 'tv'] &&
+             (data.authorId == request.auth.uid || isNameOwner(data.authorName));
+    }
+
+    function isValidUserAction(data) {
+      return data.keys().hasAll(['userId', 'recommendationId', 'status', 'createdAt']) &&
+             (data.userId == request.auth.uid || (data.keys().has('userName') && isNameOwner(data.userName))) &&
+             data.status in ['Watching', 'Completed', 'Plan to Watch'];
+    }
+
+    function isValidReaction(data) {
+      return data.keys().hasAll(['recommendationId', 'userId', 'emoji', 'createdAt']) &&
+             data.userId == request.auth.uid;
+    }
+
+    // -------------------------------------------------------------------------
+    // COLLECTIONS
+    // -------------------------------------------------------------------------
+
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create, update: if (isOwner(userId) || isNameOwner(incoming().name)) && isValidUser(incoming());
+      allow delete: if isOwner(userId);
     }
 
     match /usernames/{name} {
       allow get: if true;
-      allow create: if isSignedIn() && isValidUsernameIndex(incoming());
-      allow update: if isSignedIn() && (
-        // Re-claim: Passcode matches and changing ownerId
-        (existing().passcode == incoming().passcode && incoming().diff(existing()).affectedKeys().hasOnly(['ownerId', 'passcode'])) ||
-        // Owner update: Current owner changing passcode or ownerId
-        (existing().ownerId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['ownerId', 'passcode']))
-      );
-    }
-
-    function isNameMatch(authorName) {
-      let lowerName = authorName.toLower();
-      // Check registry directly
-      return isNameOwner(lowerName);
+      allow create: if isSignedIn() && incoming().ownerId == request.auth.uid;
+      allow update: if isSignedIn() && (existing().ownerId == request.auth.uid || existing().passcode == incoming().passcode);
     }
 
     match /recommendations/{recId} {
-      allow get: if isSignedIn();
-      // Global feed
-      allow list: if isSignedIn();
-
+      allow read: if isSignedIn();
       allow create: if isSignedIn() && isValidRecommendation(incoming());
-      
       allow update: if isSignedIn() && (
-        // Owner update
-        (existing().authorId == request.auth.uid && isValidRecommendation(incoming()) && 
-         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'comment', 'posterPath', 'backdropPath', 'year', 'runtime', 'seasons', 'episodesCount'])) ||
-        // Migration update (changing owner to current UID if names match)
-        (isNameMatch(existing().authorName) && incoming().authorId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['authorId'])) ||
-        // Cache updates from reactions/actions (system-like)
-        (incoming().diff(existing()).affectedKeys().hasOnly(['reactionsCount', 'averageRating', 'ratingCount']))
+        (existing().authorId == request.auth.uid || isNameOwner(existing().authorName)) ||
+        incoming().diff(existing()).affectedKeys().hasOnly(['reactionsCount', 'averageRating', 'ratingCount'])
       );
-      
-      allow delete: if existing().authorId == request.auth.uid;
+      allow delete: if existing().authorId == request.auth.uid || isNameMatch(existing().authorName);
 
       match /actions/{actionId} {
         allow read: if isSignedIn();
-        allow create: if isSignedIn() && isValidUserAction(incoming());
-        allow update: if (isOwner(existing().userId) || isNameOwner(existing().userName)) && isValidUserAction(incoming()) && 
-                         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'rating', 'comment', 'userName']);
-        allow delete: if isOwner(existing().userId) || isNameOwner(existing().userName);
+        allow create, update, delete: if isSignedIn();
       }
 
       match /reactions/{reactionId} {
         allow read: if isSignedIn();
-        allow create: if isSignedIn() && isValidReaction(incoming());
-        allow delete: if isOwner(existing().userId);
+        allow create, delete: if isSignedIn();
       }
     }
 
-      match /userActions/{actionId} {
-      allow get: if isSignedIn();
-      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isNameOwner(resource.data.userName));
-      allow create: if isSignedIn() && isValidUserAction(incoming());
-      allow update: if (isOwner(existing().userId) || isNameOwner(existing().userName)) && isValidUserAction(incoming()) && 
-                       incoming().diff(existing()).affectedKeys().hasOnly(['status', 'rating', 'comment', 'userName']);
-      allow delete: if isOwner(existing().userId) || isNameOwner(existing().userName);
+    match /userActions/{actionId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn();
     }
   }
 }
