@@ -1,7 +1,5 @@
 import express from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
-import axios from "axios";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 
@@ -45,6 +43,27 @@ async function createServer() {
     });
   });
 
+  // Simple Ping for TMDB
+  app.get("/api/tmdb/ping", async (req, res) => {
+    try {
+      const TMDB_KEY = process.env.TMDB_API_KEY || process.env.VITE_TMDB_API_KEY;
+      if (!TMDB_KEY) return res.status(500).json({ status: "error", message: "API Key missing" });
+      
+      const response = await fetch(`${BASE_URL}/authentication/pulse?api_key=${TMDB_KEY}`);
+      // Wait, authenticating pulse might not exist. Let's try configuration instead.
+      const response2 = await fetch(`${BASE_URL}/configuration?api_key=${TMDB_KEY}`);
+      const data = await response2.json();
+      
+      res.json({ 
+        status: response2.ok ? "ok" : "error", 
+        tmdbStatus: response2.status,
+        data: response2.ok ? "Configuration fetched" : data 
+      });
+    } catch (error: any) {
+      res.status(500).json({ status: "exception", message: error.message });
+    }
+  });
+
   // API Proxy for Gemini AI
   app.post("/api/ai/recommend", async (req, res) => {
     try {
@@ -74,50 +93,66 @@ async function createServer() {
       if (!query) return res.json({ results: [] });
 
       console.log(`TMDB Request: Search for "${query}"`);
-      const response = await axios.get(`${BASE_URL}/search/multi`, {
-        params: {
-          api_key: TMDB_KEY,
-          query: query,
-          include_adult: false,
-          language: 'en-US',
-          page: 1
-        }
-      });
       
-      console.log(`TMDB Response: ${response.status}, ${response.data.results?.length || 0} results`);
-      res.json(response.data);
+      // Use fetch instead of axios for better compatibility in some environments
+      const url = new URL(`${BASE_URL}/search/multi`);
+      url.searchParams.append('api_key', TMDB_KEY);
+      url.searchParams.append('query', String(query));
+      url.searchParams.append('include_adult', 'false');
+      url.searchParams.append('language', 'en-US');
+      url.searchParams.append('page', '1');
+
+      const response = await fetch(url.toString());
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error(`TMDB API Error (${response.status}):`, data);
+        return res.status(response.status).json({ 
+          error: "TMDB API Error", 
+          details: data.status_message || "Unknown TMDB error" 
+        });
+      }
+      
+      console.log(`TMDB Response: ${response.status}, ${data.results?.length || 0} results`);
+      res.json(data);
     } catch (error: any) {
-      const status = error.response?.status || 500;
-      const message = error.response?.data?.status_message || error.message;
-      console.error(`TMDB Search Exception (${status}):`, message);
-      res.status(status).json({ error: "TMDB API Error", details: message });
+      console.error(`TMDB Search Exception:`, error.message);
+      res.status(500).json({ error: "TMDB Proxy Error", details: error.message });
     }
   });
 
   // API Proxy for TMDB Details
   app.get("/api/tmdb/details/:type/:id", async (req, res) => {
     try {
-      if (!TMDB_API_KEY) {
+      const TMDB_KEY = process.env.TMDB_API_KEY || process.env.VITE_TMDB_API_KEY;
+      if (!TMDB_KEY) {
         return res.status(500).json({ error: "TMDB API Key not configured on server" });
       }
       const { type, id } = req.params;
-      const response = await axios.get(`${BASE_URL}/${type}/${id}`, {
-        params: {
-          api_key: TMDB_API_KEY,
-          append_to_response: 'credits,videos'
-        }
-      });
-      res.json(response.data);
+      
+      const url = new URL(`${BASE_URL}/${type}/${id}`);
+      url.searchParams.append('api_key', TMDB_KEY);
+      url.searchParams.append('append_to_response', 'credits,videos');
+
+      const response = await fetch(url.toString());
+      const data = await response.json();
+
+      if (!response.ok) {
+        return res.status(response.status).json({ 
+          error: "TMDB API Error", 
+          details: data.status_message || "Unknown TMDB error" 
+        });
+      }
+      res.json(data);
     } catch (error: any) {
-      const status = error.response?.status || 500;
-      const message = error.response?.data?.status_message || error.message;
-      console.error(`TMDB Details Error (${status}):`, message);
-      res.status(status).json({ error: "Failed to fetch from TMDB", details: message });
+      console.error(`TMDB Details Error:`, error.message);
+      res.status(500).json({ error: "Failed to fetch from TMDB", details: error.message });
     }
   });
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",

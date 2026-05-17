@@ -26,8 +26,17 @@ export const tmdbService = {
     try {
       const response = await fetch(`/api/tmdb/search?query=${encodeURIComponent(query)}`);
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Search failed with status ${response.status}`);
+        let errMsg = `Search failed with status ${response.status}`;
+        try {
+          const contentType = response.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            const errorData = await response.json();
+            errMsg = errorData.error || errorData.details || errMsg;
+          }
+        } catch (e) {
+          console.error("Failed to parse error response", e);
+        }
+        throw new Error(errMsg);
       }
       const data = await response.json();
       
