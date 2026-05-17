@@ -16,9 +16,13 @@ async function createServer() {
 
   if (!TMDB_API_KEY) {
     console.warn("WARNING: TMDB_API_KEY is missing from environment variables.");
+  } else {
+    console.log(`TMDB_API_KEY is configured (starts with: ${TMDB_API_KEY.substring(0, 4)}...)`);
   }
   if (!GEMINI_API_KEY) {
     console.warn("WARNING: GEMINI_API_KEY is missing from environment variables.");
+  } else {
+    console.log(`GEMINI_API_KEY is configured (starts with: ${GEMINI_API_KEY.substring(0, 4)}...)`);
   }
 
   // Initialize Gemini only if key exists
@@ -56,6 +60,7 @@ async function createServer() {
       const { query } = req.query;
       if (!query) return res.json({ results: [] });
 
+      console.log(`TMDB Searching for: "${query}"...`);
       const response = await axios.get(`${BASE_URL}/search/multi`, {
         params: {
           api_key: TMDB_API_KEY,
@@ -65,6 +70,7 @@ async function createServer() {
           page: 1
         }
       });
+      console.log(`TMDB Search Response Status: ${response.status}, Results count: ${response.data.results?.length || 0}`);
       res.json(response.data);
     } catch (error: any) {
       const status = error.response?.status || 500;

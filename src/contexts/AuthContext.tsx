@@ -90,6 +90,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const profileData = {
         name,
+        nameLower: name.toLowerCase().trim(),
         passcode, // Keep passcode in profile for easy re-auth/verification if needed
         avatar: existingData?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`,
         watchedCount: existingData?.watchedCount || 0,

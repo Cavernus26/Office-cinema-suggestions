@@ -156,14 +156,14 @@ const MainApp = () => {
     
     const cleanupDuplicates = async () => {
       try {
-        console.log(`Checking for legacy accounts with name "${profile.name}" to merge into ${user.uid}...`);
+        const lowerName = profile.nameLower || profile.name.toLowerCase().trim();
+        console.log(`Checking for accounts with name "${profile.name}" to merge into ${user.uid}...`);
         
-        // Wait a bit for profile to propagate in Firestore rules cache (important for get() in rules)
-        await new Promise(r => setTimeout(r, 1500));
+        await new Promise(r => setTimeout(r, 1000));
 
-        // 1. Find all users with the exact same name
+        // Find all users with either exact name or same lowercase name
         const usersRef = collection(db, 'users');
-        const q = query(usersRef, where('name', '==', profile.name));
+        const q = query(usersRef, where('nameLower', '==', lowerName));
         const usersSnap = await getDocs(q).catch(err => handleFirestoreError(err, OperationType.LIST, 'users'));
         
         if (!usersSnap) return;

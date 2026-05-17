@@ -107,8 +107,18 @@ service cloud.firestore {
     }
 
     function isNameMatch(authorName) {
-      let path = /databases/$(database)/documents/users/$(request.auth.uid);
-      return isSignedIn() && exists(path) && get(path).data.name == authorName;
+      // Normalize both for comparison
+      let lowerName = authorName.toLower();
+      let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
+      
+      // Check 1: Does the current user have a profile with this name (lower)?
+      let matchedByProfile = isSignedIn() && exists(userPath) && get(userPath).data.nameLower == lowerName;
+      
+      // Check 2: Does the global registry say this UID owns this name (lower)?
+      let usernamePath = /databases/$(database)/documents/usernames/$(lowerName);
+      let matchedByRegistry = isSignedIn() && exists(usernamePath) && get(usernamePath).data.ownerId == request.auth.uid;
+      
+      return matchedByProfile || matchedByRegistry;
     }
 
     match /recommendations/{recId} {
