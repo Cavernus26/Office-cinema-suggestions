@@ -318,41 +318,41 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 20 }}
-              className="absolute bottom-3 left-2 right-2 z-20 flex flex-col gap-2"
+              className="absolute bottom-3 left-2 right-2 z-20 flex flex-col gap-1.5"
             >
-              <div className="flex flex-col gap-1.5 sm:flex-row sm:gap-2">
+              <div className="flex flex-col gap-1.5 sm:flex-row sm:gap-1.5">
                 <button
                   onClick={() => handleStatusChange(userAction?.status === 'Watching' ? null : 'Watching')}
                   className={cn(
-                    "flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-[10px] sm:text-[11px] font-black uppercase transition-all",
+                    "flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2.5 text-[9px] font-black uppercase transition-all",
                     userAction?.status === 'Watching' ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/20" : "bg-slate-800/90 text-white backdrop-blur-md hover:bg-slate-700"
                   )}
                 >
-                  <Play className={cn("h-3 w-3", userAction?.status === 'Watching' ? "fill-current" : "")} />
-                  <span className="tracking-wider">Watching</span>
+                  <Play className={cn("h-2.5 w-2.5", userAction?.status === 'Watching' ? "fill-current" : "")} />
+                  <span className="tracking-tight whitespace-nowrap">Watching</span>
                 </button>
                 <button
                   onClick={() => handleStatusChange(userAction?.status === 'Completed' ? null : 'Completed')}
                   className={cn(
-                    "flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-[10px] sm:text-[11px] font-black uppercase transition-all",
+                    "flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2.5 text-[9px] font-black uppercase transition-all",
                     userAction?.status === 'Completed' ? "bg-green-600 text-white shadow-lg shadow-green-500/20" : "bg-slate-800/90 text-white backdrop-blur-md hover:bg-slate-700"
                   )}
                 >
-                  <CheckCircle className="h-3 w-3" />
-                  <span className="tracking-wider">Watched</span>
+                  <CheckCircle className="h-2.5 w-2.5" />
+                  <span className="tracking-tight whitespace-nowrap">Watched</span>
                 </button>
               </div>
               <button
                 onClick={() => handleStatusChange(userAction?.status === 'Plan to Watch' ? null : 'Plan to Watch')}
                 className={cn(
-                  "flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-[10px] sm:text-[11px] font-black uppercase transition-all border",
+                  "flex w-full items-center justify-center gap-1.5 rounded-lg py-2.5 text-[9px] font-black uppercase transition-all border",
                   userAction?.status === 'Plan to Watch' 
                     ? "bg-yellow-400 text-slate-950 border-yellow-400 shadow-lg shadow-yellow-400/20" 
                     : "bg-slate-800/90 text-white backdrop-blur-md border-transparent hover:bg-slate-700 hover:border-slate-600"
                 )}
               >
-                {userAction?.status === 'Plan to Watch' ? <BookmarkCheck className="h-3.5 w-3.5" /> : <BookmarkPlus className="h-3.5 w-3.5" />}
-                <span className="tracking-wider">{userAction?.status === 'Plan to Watch' ? 'In Watchlist' : 'Add to Watchlist'}</span>
+                {userAction?.status === 'Plan to Watch' ? <BookmarkCheck className="h-3 w-3" /> : <BookmarkPlus className="h-3 w-3" />}
+                <span className="tracking-tight whitespace-nowrap">{userAction?.status === 'Plan to Watch' ? 'In Watchlist' : 'Add to Watchlist'}</span>
               </button>
             </motion.div>
           )}
@@ -410,12 +410,12 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
               </button>
             ))}
           </div>
-          <div className="h-4 flex items-center px-4 overflow-hidden w-full justify-center">
+          <div className="h-4 flex items-center px-2 overflow-hidden w-full justify-center">
             {user?.uid === rec.authorId ? (
-              <span className="text-[9px] font-black text-slate-600 uppercase tracking-[0.15em] whitespace-nowrap">office average rating</span>
+              <span className="text-[8px] font-black text-slate-600 uppercase tracking-tight whitespace-nowrap">Office Average Rating</span>
             ) : (
               <span className={cn(
-                "text-[9px] font-black uppercase tracking-widest whitespace-nowrap",
+                "text-[8px] font-black uppercase tracking-tight whitespace-nowrap",
                 userAction?.rating ? "text-yellow-500/80" : "text-slate-500"
               )}>
                 {userAction?.rating ? `Your Rating: ${userAction.rating} / 5` : 'Rate this performance'}
