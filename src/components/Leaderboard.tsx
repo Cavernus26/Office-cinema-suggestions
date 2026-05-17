@@ -18,8 +18,26 @@ export const Leaderboard: React.FC = () => {
     return unsub;
   }, []);
 
-  // Sort users for display
-  const sortedUsers = [...users].sort((a, b) => {
+  // Sort users for display and filter duplicates (case-insensitive name)
+  const uniqueUsers = users.reduce((acc, current) => {
+    const nameKey = current.name.toLowerCase().trim();
+    if (!acc[nameKey]) {
+      acc[nameKey] = current;
+    } else {
+      // Keep the one with more recommendations or currently active session
+      const isCurrentSession = current.id === auth.currentUser?.uid;
+      const isPrevSessionCurrent = acc[nameKey].id === auth.currentUser?.uid;
+      
+      if (isCurrentSession) {
+        acc[nameKey] = current;
+      } else if (!isPrevSessionCurrent && (current.recsCount || 0) > (acc[nameKey].recsCount || 0)) {
+        acc[nameKey] = current;
+      }
+    }
+    return acc;
+  }, {} as Record<string, any>);
+
+  const sortedUsers = (Object.values(uniqueUsers) as any[]).sort((a: any, b: any) => {
     // Primary sort: recsCount
     const countDiff = (b.recsCount || 0) - (a.recsCount || 0);
     if (countDiff !== 0) return countDiff;

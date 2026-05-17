@@ -7,9 +7,9 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const app = express();
-
 async function createServer() {
+  const app = express();
+  
   const TMDB_API_KEY = process.env.TMDB_API_KEY || process.env.VITE_TMDB_API_KEY;
   const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
   const BASE_URL = 'https://api.themoviedb.org/3';
@@ -19,21 +19,33 @@ async function createServer() {
   } else {
     console.log(`TMDB_API_KEY is configured (starts with: ${TMDB_API_KEY.substring(0, 4)}...)`);
   }
+
   if (!GEMINI_API_KEY) {
     console.warn("WARNING: GEMINI_API_KEY is missing from environment variables.");
   } else {
     console.log(`GEMINI_API_KEY is configured (starts with: ${GEMINI_API_KEY.substring(0, 4)}...)`);
   }
-
-  // Initialize Gemini only if key exists
+  
+  // Initialize Gemini
   let genAI: any = null;
   if (GEMINI_API_KEY) {
     genAI = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
   }
-
+  
   app.use(express.json());
 
-  // API Proxy for Gemini AI (Securely accessed only from backend)
+  // Debug Endpoint for Config
+  app.get("/api/config-check", (req, res) => {
+    res.json({
+      tmdbKeySet: !!TMDB_API_KEY,
+      tmdbPrefix: TMDB_API_KEY ? TMDB_API_KEY.substring(0, 4) : null,
+      nodeEnv: process.env.NODE_ENV,
+      isVercel: !!process.env.VERCEL,
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  // API Proxy for Gemini AI
   app.post("/api/ai/recommend", async (req, res) => {
     try {
       if (!genAI) {
@@ -53,30 +65,32 @@ async function createServer() {
   // API Proxy for TMDB Search
   app.get("/api/tmdb/search", async (req, res) => {
     try {
-      if (!TMDB_API_KEY) {
-        console.error("TMDB Error: API Key missing from environment.");
-        return res.status(500).json({ error: "TMDB API Key not configured on server. Please set TMDB_API_KEY or VITE_TMDB_API_KEY in your environment variables." });
+      const TMDB_KEY = process.env.TMDB_API_KEY || process.env.VITE_TMDB_API_KEY;
+      if (!TMDB_KEY) {
+        console.error("TMDB Error: API Key missing from environment variables.");
+        return res.status(500).json({ error: "TMDB API Key missing on server" });
       }
       const { query } = req.query;
       if (!query) return res.json({ results: [] });
 
-      console.log(`TMDB Searching for: "${query}"...`);
+      console.log(`TMDB Request: Search for "${query}"`);
       const response = await axios.get(`${BASE_URL}/search/multi`, {
         params: {
-          api_key: TMDB_API_KEY,
+          api_key: TMDB_KEY,
           query: query,
           include_adult: false,
           language: 'en-US',
           page: 1
         }
       });
-      console.log(`TMDB Search Response Status: ${response.status}, Results count: ${response.data.results?.length || 0}`);
+      
+      console.log(`TMDB Response: ${response.status}, ${response.data.results?.length || 0} results`);
       res.json(response.data);
     } catch (error: any) {
       const status = error.response?.status || 500;
       const message = error.response?.data?.status_message || error.message;
-      console.error(`TMDB Search Error (${status}):`, message);
-      res.status(status).json({ error: "Failed to fetch from TMDB", details: message });
+      console.error(`TMDB Search Exception (${status}):`, message);
+      res.status(status).json({ error: "TMDB API Error", details: message });
     }
   });
 
@@ -133,5 +147,14 @@ if (process.env.NODE_ENV !== "production" || !process.env.VERCEL) {
   });
 }
 
-export default app;
+// For Vercel:
+let cachedApp: any;
+const handler = async (req: any, res: any) => {
+  if (!cachedApp) {
+    cachedApp = await createServer();
+  }
+  return cachedApp(req, res);
+};
+
+export default handler;
 export { createServer };

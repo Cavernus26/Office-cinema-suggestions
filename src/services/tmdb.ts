@@ -47,7 +47,7 @@ export const tmdbService = {
       });
     } catch (error) {
       console.error('TMDB Search Error:', error);
-      return [];
+      throw error;
     }
   },
 
