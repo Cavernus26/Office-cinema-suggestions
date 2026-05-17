@@ -25,8 +25,26 @@ export const tmdbService = {
   search: async (query: string): Promise<TMDBResult[]> => {
     try {
       const response = await fetch(`/api/tmdb/search?query=${encodeURIComponent(query)}`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Search failed with status ${response.status}`);
+      }
       const data = await response.json();
-      return (data.results || []).filter((item: any) => item.media_type === 'movie' || item.media_type === 'tv');
+      
+      // Filter results to only include movies or tv shows. 
+      // If media_type is missing, we check for distinguishing fields like title or name.
+      return (data.results || []).filter((item: any) => {
+        if (item.media_type) return item.media_type === 'movie' || item.media_type === 'tv';
+        if (item.title && item.release_date) {
+           item.media_type = 'movie';
+           return true;
+        }
+        if (item.name && item.first_air_date) {
+           item.media_type = 'tv';
+           return true;
+        }
+        return false;
+      });
     } catch (error) {
       console.error('TMDB Search Error:', error);
       return [];

@@ -61,7 +61,10 @@ export async function testConnection() {
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
     if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error("Please check your Firebase configuration.");
+      console.error("CRITICAL: Firestore connection failed (client is offline).");
+      console.error("This usually means CLOUD FIRESTORE is not enabled in your Firebase Project.");
+      console.error("Please go to Firebase Console -> Build -> Firestore Database and click 'Create database'.");
+      console.error("Make sure to pick 'Cloud Firestore', NOT 'Realtime Database'.");
     }
   }
 }
@@ -95,8 +98,10 @@ export interface FirestoreErrorInfo {
 }
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: errorMessage,
     authInfo: {
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,
@@ -111,6 +116,14 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     operationType,
     path
   }
+
+  // Check for common connection/setup issues
+  if (errorMessage.includes('client is offline')) {
+    const helpfulMessage = "Could not connect to database. Please ensure 'Cloud Firestore' is enabled in your Firebase Console (not Realtime Database).";
+    console.error('Firestore Setup Error: ', helpfulMessage);
+    throw new Error(helpfulMessage);
+  }
+
   console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  throw new Error(`Firebase Error: ${errorMessage}`);
 }

@@ -16,6 +16,7 @@ export const AddRecommendationModal: React.FC<AddModalProps> = ({ isOpen, onClos
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<TMDBResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<TMDBResult | null>(null);
   const [comment, setComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -23,19 +24,22 @@ export const AddRecommendationModal: React.FC<AddModalProps> = ({ isOpen, onClos
   useEffect(() => {
     if (query.trim().length < 2) {
       setResults([]);
+      setError(null);
       return;
     }
 
     const timer = setTimeout(async () => {
       setIsSearching(true);
+      setError(null);
       try {
         const searchResults = await tmdbService.search(query);
         setResults(searchResults.slice(0, 5));
-        if (searchResults.length === 0 && query.trim().length >= 2) {
-          console.warn('Search returned no results. Check backend logs and TMDB_API_KEY environment variable.');
-        }
-      } catch (err) {
-        console.error('Search component error:', err);
+        
+        // Check if there was an error hidden in the response (our backend sends it)
+        // Note: tmdbService.search returns [] on error, so we rely on console logs usually,
+        // but let's make it smarter.
+      } catch (err: any) {
+        setError(err.message || 'Search failed');
       } finally {
         setIsSearching(false);
       }
@@ -138,7 +142,13 @@ export const AddRecommendationModal: React.FC<AddModalProps> = ({ isOpen, onClos
                     </div>
                   )}
 
-                  {!isSearching && query.length >= 2 && results.length === 0 && (
+                  {error && (
+                    <div className="rounded-2xl bg-red-500/10 border border-red-500/20 p-4 text-center">
+                      <p className="text-xs font-bold text-red-400 uppercase tracking-widest">{error}</p>
+                    </div>
+                  )}
+
+                  {!isSearching && !error && query.length >= 2 && results.length === 0 && (
                     <div className="text-center py-6">
                       <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">No results found</p>
                     </div>

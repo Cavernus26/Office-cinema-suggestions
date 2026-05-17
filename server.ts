@@ -10,9 +10,16 @@ dotenv.config();
 const app = express();
 
 async function createServer() {
-  const TMDB_API_KEY = process.env.TMDB_API_KEY;
-  const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+  const TMDB_API_KEY = process.env.TMDB_API_KEY || process.env.VITE_TMDB_API_KEY;
+  const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
   const BASE_URL = 'https://api.themoviedb.org/3';
+
+  if (!TMDB_API_KEY) {
+    console.warn("WARNING: TMDB_API_KEY is missing from environment variables.");
+  }
+  if (!GEMINI_API_KEY) {
+    console.warn("WARNING: GEMINI_API_KEY is missing from environment variables.");
+  }
 
   // Initialize Gemini only if key exists
   let genAI: any = null;
@@ -43,19 +50,27 @@ async function createServer() {
   app.get("/api/tmdb/search", async (req, res) => {
     try {
       if (!TMDB_API_KEY) {
-        return res.status(500).json({ error: "TMDB API Key not configured on server" });
+        console.error("TMDB Error: API Key missing from environment.");
+        return res.status(500).json({ error: "TMDB API Key not configured on server. Please set TMDB_API_KEY or VITE_TMDB_API_KEY in your environment variables." });
       }
       const { query } = req.query;
+      if (!query) return res.json({ results: [] });
+
       const response = await axios.get(`${BASE_URL}/search/multi`, {
         params: {
           api_key: TMDB_API_KEY,
-          query: query
+          query: query,
+          include_adult: false,
+          language: 'en-US',
+          page: 1
         }
       });
       res.json(response.data);
     } catch (error: any) {
-      console.error("TMDB Search Error:", error.message);
-      res.status(500).json({ error: "Failed to fetch from TMDB" });
+      const status = error.response?.status || 500;
+      const message = error.response?.data?.status_message || error.message;
+      console.error(`TMDB Search Error (${status}):`, message);
+      res.status(status).json({ error: "Failed to fetch from TMDB", details: message });
     }
   });
 
@@ -68,13 +83,16 @@ async function createServer() {
       const { type, id } = req.params;
       const response = await axios.get(`${BASE_URL}/${type}/${id}`, {
         params: {
-          api_key: TMDB_API_KEY
+          api_key: TMDB_API_KEY,
+          append_to_response: 'credits,videos'
         }
       });
       res.json(response.data);
     } catch (error: any) {
-      console.error("TMDB Details Error:", error.message);
-      res.status(500).json({ error: "Failed to fetch from TMDB" });
+      const status = error.response?.status || 500;
+      const message = error.response?.data?.status_message || error.message;
+      console.error(`TMDB Details Error (${status}):`, message);
+      res.status(status).json({ error: "Failed to fetch from TMDB", details: message });
     }
   });
 
