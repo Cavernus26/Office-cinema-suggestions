@@ -2,13 +2,11 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { auth, db } from '../lib/firebase';
 import { 
   onAuthStateChanged, 
-  signInAnonymously, 
   User, 
   GoogleAuthProvider, 
-  signInWithPopup, 
-  linkWithPopup,
-  unlink,
-  updateProfile
+  signInWithPopup,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword
 } from 'firebase/auth';
 import { 
   collection, 
@@ -31,9 +29,7 @@ interface AuthContextType {
   loading: boolean;
   login: (name: string, passcode: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
-  continueAsGuest: () => Promise<void>;
   logout: () => Promise<void>;
-  upgradeToGoogle: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -50,7 +46,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     
     if (!userDoc.exists()) {
       const initialProfile = {
-        name: name || authUser.displayName || 'Anonymous Guest',
+        name: name || authUser.displayName || 'Circle Member',
         passcode: passcode || null,
         avatar: authUser.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${authUser.uid}`,
         watchedCount: 0,
@@ -126,70 +122,67 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
-  const continueAsGuest = async () => {
-    setLoading(true);
-    try {
-      const result = await signInAnonymously(auth);
-      await ensureUserDoc(result.user);
-    } catch (error) {
-      console.error("Guest login failed", error);
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const login = async (name: string, passcode: string) => {
-    if (!auth.currentUser) {
-      await signInAnonymously(auth);
-    }
-    const currentUser = auth.currentUser!;
+    const cleanedName = name.trim();
+    const usernameId = cleanedName.toLowerCase();
+    const email = `${usernameId}@office-cinema.local`;
     
-    const usernameId = name.toLowerCase().trim();
+    // 1. Check if username exists in our index
     const usernameRef = doc(db, 'usernames', usernameId);
     const usernameDoc = await getDoc(usernameRef);
     
     if (usernameDoc.exists()) {
-      const data = usernameDoc.data();
-      if (data.passcode !== passcode) {
-        throw new Error('WRONG_PASSCODE');
-      }
-      if (data.ownerId !== currentUser.uid) {
-        // Linking this name to this UID
-        await updateDoc(usernameRef, { ownerId: currentUser.uid });
+      // Returning user - attempt sign in
+      try {
+        await signInWithEmailAndPassword(auth, email, passcode);
+      } catch (error: any) {
+        if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+          throw new Error('WRONG_PASSCODE');
+        }
+        throw error;
       }
     } else {
-      await setDoc(usernameRef, { ownerId: currentUser.uid, passcode });
+      // New user - attempt sign up
+      try {
+        const result = await createUserWithEmailAndPassword(auth, email, passcode);
+        const newUser = result.user;
+        
+        // Atomically reserve username and create profile
+        const batch = writeBatch(db);
+        batch.set(usernameRef, { ownerId: newUser.uid, passcode });
+        
+        const userRef = doc(db, 'users', newUser.uid);
+        const profileData = {
+          name: cleanedName,
+          passcode,
+          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${newUser.uid}`,
+          watchedCount: 0,
+          recsCount: 0,
+          avgRating: 0,
+          uid: newUser.uid,
+          email: email,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        };
+        batch.set(userRef, profileData);
+        
+        await batch.commit();
+      } catch (error: any) {
+        if (error.code === 'auth/email-already-in-use') {
+          throw new Error('USERNAME_TAKEN');
+        }
+        throw error;
+      }
     }
-
-    await ensureUserDoc(currentUser, name, passcode);
   };
 
   const loginWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
-  };
-
-  const upgradeToGoogle = async () => {
-    if (!auth.currentUser) return;
-    const provider = new GoogleAuthProvider();
-    try {
-      await linkWithPopup(auth.currentUser, provider);
-      // After linking, fetch profile updates
-      await ensureUserDoc(auth.currentUser);
-    } catch (error: any) {
-      if (error.code === 'auth/credential-already-in-use') {
-        // Handle case where Google account is already linked to another UID
-        // You might want to sign in with Google instead and merge data manually
-        console.error("Credentials already in use");
-        throw error;
-      }
-      throw error;
-    }
+    const result = await signInWithPopup(auth, provider);
+    await ensureUserDoc(result.user);
   };
 
   const logout = async () => {
-    localStorage.removeItem('office_cinema_name');
     await auth.signOut();
   };
 
@@ -200,9 +193,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       loading, 
       login, 
       loginWithGoogle, 
-      continueAsGuest,
-      logout,
-      upgradeToGoogle 
+      logout
     }}>
       {children}
     </AuthContext.Provider>

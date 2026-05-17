@@ -13,7 +13,7 @@ import { collection, getDocs, query, limit, where, doc, updateDoc, deleteDoc } f
 import { handleFirestoreError, OperationType } from './lib/firebase';
 
 const LoginScreen = () => {
-  const { login, loginWithGoogle, continueAsGuest } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const [name, setName] = useState('');
   const [passcode, setPasscode] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -31,9 +31,7 @@ const LoginScreen = () => {
       if (err.message === 'WRONG_PASSCODE') {
         setError('Incorrect passcode for this name!');
       } else if (err.message === 'USERNAME_TAKEN') {
-        setError('This name is already owned by someone else! Try a different name or your correct passcode.');
-      } else if (err.code === 'permission-denied') {
-        setError('Database permission error. Please try a different name.');
+        setError('This name is already taken! Try another one.');
       } else {
         setError(err.message || 'Something went wrong. Try again.');
       }
@@ -49,18 +47,6 @@ const LoginScreen = () => {
     } catch (err: any) {
       console.error('Google login error:', err);
       setError('Google sign-in failed. Please try again.');
-      setIsLoggingIn(false);
-    }
-  };
-
-  const handleGuestLogin = async () => {
-    setIsLoggingIn(true);
-    setError(null);
-    try {
-      await continueAsGuest();
-    } catch (err: any) {
-      console.error('Guest login error:', err);
-      setError('Guest entry failed. Please try again.');
       setIsLoggingIn(false);
     }
   };
@@ -179,15 +165,6 @@ const LoginScreen = () => {
             <span>Continue with Google</span>
           </button>
 
-          <button
-            type="button"
-            onClick={handleGuestLogin}
-            disabled={isLoggingIn}
-            className="w-full py-2 text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] hover:text-white transition-colors"
-          >
-            Continue as Guest
-          </button>
-
           <AnimatePresence>
             {error && (
               <motion.div
@@ -220,77 +197,6 @@ const MainApp = () => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [randomRolling, setRandomRolling] = useState(false);
   const [currentView, setCurrentView] = useState<'feed' | 'watchlist' | 'community'>('feed');
-
-  // One-time cleanup for duplicate accounts to handle anonymous session logging back in
-  useEffect(() => {
-    if (!user || !profile || !profile.name) return;
-    
-    const cleanupDuplicates = async () => {
-      try {
-        const lowerName = profile.nameLower || profile.name.toLowerCase().trim();
-        console.log(`Checking for accounts with name "${profile.name}" to merge into ${user.uid}...`);
-        
-        await new Promise(r => setTimeout(r, 1000));
-
-        // Find all users with either exact name or same lowercase name
-        const usersRef = collection(db, 'users');
-        const q = query(usersRef, where('nameLower', '==', lowerName));
-        const usersSnap = await getDocs(q).catch(err => handleFirestoreError(err, OperationType.LIST, 'users'));
-        
-        if (!usersSnap) return;
-        const otherUsers = usersSnap.docs
-          .map(d => ({ id: d.id, ...d.data() } as any))
-          .filter(u => u.id !== user.uid);
-
-        if (otherUsers.length > 0) {
-          console.log(`Found ${otherUsers.length} legacy accounts to merge for ${profile.name}.`);
-          
-          for (const oldUser of otherUsers) {
-            // Reassign recommendations
-            const recsRef = collection(db, 'recommendations');
-            const recsQ = query(recsRef, where('authorId', '==', oldUser.id));
-            const recsSnap = await getDocs(recsQ).catch(err => handleFirestoreError(err, OperationType.LIST, 'recommendations'));
-            
-            if (!recsSnap) continue;
-            console.log(`Merging ${recsSnap.size} recommendations from ${oldUser.id}`);
-            
-            for (const recDoc of recsSnap.docs) {
-              try {
-                await updateDoc(doc(db, 'recommendations', recDoc.id), {
-                  authorId: user.uid,
-                  authorName: profile.name
-                });
-              } catch (updErr) {
-                handleFirestoreError(updErr, OperationType.UPDATE, `recommendations/${recDoc.id}`);
-              }
-            }
-
-            // Transfer stats if they are higher (simple merge)
-            const newStats = {
-              recsCount: Math.max(profile.recsCount || 0, oldUser.recsCount || 0, recsSnap.size),
-              watchedCount: Math.max(profile.watchedCount || 0, oldUser.watchedCount || 0),
-            };
-            
-            await updateDoc(doc(db, 'users', user.uid), newStats);
-
-            // Delete old user
-            try {
-              await deleteDoc(doc(db, 'users', oldUser.id));
-              console.log(`Deleted legacy account ${oldUser.id}`);
-            } catch (delErr) {
-              handleFirestoreError(delErr, OperationType.DELETE, `users/${oldUser.id}`);
-            }
-          }
-          
-          console.log('Merge process complete for', profile.name);
-        }
-      } catch (err) {
-        console.error('Account merge process failed:', err);
-      }
-    };
-
-    cleanupDuplicates();
-  }, [user, profile]);
 
   const handleRandomRoll = async () => {
     if (randomRolling) return;
