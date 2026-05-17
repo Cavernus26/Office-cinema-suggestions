@@ -31,6 +31,7 @@ interface AuthContextType {
   loading: boolean;
   login: (name: string, passcode: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
+  continueAsGuest: () => Promise<void>;
   logout: () => Promise<void>;
   upgradeToGoogle: () => Promise<void>;
 }
@@ -49,9 +50,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     
     if (!userDoc.exists()) {
       const initialProfile = {
-        name: name || authUser.displayName || 'Anonymous',
+        name: name || authUser.displayName || 'Anonymous Guest',
         passcode: passcode || null,
-        avatar: authUser.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${name || authUser.uid}`,
+        avatar: authUser.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${authUser.uid}`,
         watchedCount: 0,
         recsCount: 0,
         avgRating: 0,
@@ -64,16 +65,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await setDoc(userRef, initialProfile);
       return initialProfile;
     } else {
-      // Update existing doc with latest auth info
+      // Update existing doc with latest auth info if needed
+      const data = userDoc.data();
       const updates: any = { 
         updatedAt: serverTimestamp(),
         isAnonymous: authUser.isAnonymous
       };
-      if (authUser.email) updates.email = authUser.email;
-      if (authUser.photoURL && !userDoc.data().avatar) updates.avatar = authUser.photoURL;
       
-      await updateDoc(userRef, updates);
-      return { ...userDoc.data(), ...updates };
+      let hasChanges = false;
+      if (authUser.email && data.email !== authUser.email) {
+        updates.email = authUser.email;
+        hasChanges = true;
+      }
+      if (authUser.photoURL && !data.avatar) {
+        updates.avatar = authUser.photoURL;
+        hasChanges = true;
+      }
+      if (name && data.name !== name) {
+        updates.name = name;
+        hasChanges = true;
+      }
+
+      if (hasChanges) {
+        await updateDoc(userRef, updates);
+        return { ...data, ...updates };
+      }
+      return data;
     }
   };
 
@@ -84,27 +101,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(authUser);
       
       if (authUser) {
-        // Automatically ensure user doc exists
+        // Automatically ensure user doc exists for returning users
         const userRef = doc(db, 'users', authUser.uid);
         
         unsubscribeProfile = onSnapshot(userRef, async (docSnap) => {
           if (docSnap.exists()) {
             setProfile(docSnap.data());
           } else {
-            // First time this UID is seen, create the doc
+            // If the listener finds no doc, create it with current auth info
             await ensureUserDoc(authUser);
           }
         });
       } else {
         setProfile(null);
         if (unsubscribeProfile) unsubscribeProfile();
-        
-        // Auto-login anonymously if no session
-        try {
-          await signInAnonymously(auth);
-        } catch (e) {
-          console.error("Auto-anonymous login failed", e);
-        }
       }
       
       setLoading(false);
@@ -116,8 +126,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
+  const continueAsGuest = async () => {
+    setLoading(true);
+    try {
+      const result = await signInAnonymously(auth);
+      await ensureUserDoc(result.user);
+    } catch (error) {
+      console.error("Guest login failed", error);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const login = async (name: string, passcode: string) => {
-    if (!auth.currentUser) await signInAnonymously(auth);
+    if (!auth.currentUser) {
+      await signInAnonymously(auth);
+    }
     const currentUser = auth.currentUser!;
     
     const usernameId = name.toLowerCase().trim();
@@ -129,20 +154,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (data.passcode !== passcode) {
         throw new Error('WRONG_PASSCODE');
       }
-      // If the owner matches or we're claiming it
       if (data.ownerId !== currentUser.uid) {
-        // Re-claiming: User re-entered their name/passcode on a new device/session
-        // Note: In a full system we'd merge profiles, but here we just update the owner index
+        // Linking this name to this UID
         await updateDoc(usernameRef, { ownerId: currentUser.uid });
       }
     } else {
-      // First time claiming this name
       await setDoc(usernameRef, { ownerId: currentUser.uid, passcode });
     }
 
-    // Update the profile with the chosen name
     await ensureUserDoc(currentUser, name, passcode);
-    localStorage.setItem('office_cinema_name', name);
   };
 
   const loginWithGoogle = async () => {
@@ -180,6 +200,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       loading, 
       login, 
       loginWithGoogle, 
+      continueAsGuest,
       logout,
       upgradeToGoogle 
     }}>

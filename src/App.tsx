@@ -13,7 +13,7 @@ import { collection, getDocs, query, limit, where, doc, updateDoc, deleteDoc } f
 import { handleFirestoreError, OperationType } from './lib/firebase';
 
 const LoginScreen = () => {
-  const { login, loginWithGoogle } = useAuth();
+  const { login, loginWithGoogle, continueAsGuest } = useAuth();
   const [name, setName] = useState('');
   const [passcode, setPasscode] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -49,6 +49,18 @@ const LoginScreen = () => {
     } catch (err: any) {
       console.error('Google login error:', err);
       setError('Google sign-in failed. Please try again.');
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleGuestLogin = async () => {
+    setIsLoggingIn(true);
+    setError(null);
+    try {
+      await continueAsGuest();
+    } catch (err: any) {
+      console.error('Guest login error:', err);
+      setError('Guest entry failed. Please try again.');
       setIsLoggingIn(false);
     }
   };
@@ -165,6 +177,15 @@ const LoginScreen = () => {
               />
             </svg>
             <span>Continue with Google</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleGuestLogin}
+            disabled={isLoggingIn}
+            className="w-full py-2 text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] hover:text-white transition-colors"
+          >
+            Continue as Guest
           </button>
 
           <AnimatePresence>
@@ -453,6 +474,15 @@ const Root = () => {
           <div className="absolute inset-0 rounded-full border-4 border-t-orange-600 animate-spin" />
           <Film className="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-white" />
         </div>
+      </div>
+    );
+  }
+
+  // If we have a user but no profile yet, we are likely waiting for the firestore snapshot
+  if (user && !profile) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-black">
+        <Loader2 className="h-8 w-8 animate-spin text-yellow-400" />
       </div>
     );
   }
