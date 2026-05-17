@@ -5,17 +5,18 @@ import { Recommendation, UserAction } from '../types';
 import { MovieCard } from './MovieCard';
 import { motion, AnimatePresence } from 'motion/react';
 import { Loader2, Sparkles, Filter, Bookmark } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 interface RecommendationFeedProps {
   view?: 'feed' | 'watchlist';
 }
 
 export const RecommendationFeed: React.FC<RecommendationFeedProps> = ({ view = 'feed' }) => {
+  const { user, profile } = useAuth();
   const [recs, setRecs] = useState<Recommendation[]>([]);
   const [userActions, setUserActions] = useState<UserAction[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'movie' | 'tv'>('all');
-  const user = auth.currentUser;
 
   useEffect(() => {
     const q = query(collection(db, 'recommendations'), orderBy('createdAt', 'desc'));
@@ -27,8 +28,8 @@ export const RecommendationFeed: React.FC<RecommendationFeedProps> = ({ view = '
     });
 
     let unsubActions = () => {};
-    if (user) {
-      const actionsQ = query(collection(db, 'userActions'), where('userId', '==', user.uid));
+    if (profile) {
+      const actionsQ = query(collection(db, 'userActions'), where('userName', '==', profile.name));
       unsubActions = onSnapshot(actionsQ, (snapshot) => {
         setUserActions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserAction)));
       }, (error) => {
@@ -40,7 +41,7 @@ export const RecommendationFeed: React.FC<RecommendationFeedProps> = ({ view = '
       unsubRecs();
       unsubActions();
     };
-  }, [user?.uid]);
+  }, [profile?.name]);
 
   const filteredRecs = recs.filter(r => {
     const typeMatch = filter === 'all' || r.type === filter;

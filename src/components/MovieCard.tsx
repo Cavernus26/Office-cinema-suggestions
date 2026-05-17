@@ -25,14 +25,14 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
     return unsub;
   }, [rec.id]);
 
-  const userAction = actions.find(a => a.userId === user?.uid);
+  const userAction = profile ? actions.find(a => a.userName.toLowerCase() === profile.nameLower) : null;
   const completedCount = actions.filter(a => a.status === 'Completed').length;
   const watchingCount = actions.filter(a => a.status === 'Watching').length;
 
   const handleStatusChange = async (newStatus: WatchStatus | null) => {
-    if (!user) return;
-    const actionId = `${user.uid}_${rec.id}`;
-    const actionPath = `recommendations/${rec.id}/actions/${user.uid}`;
+    if (!user || !profile) return;
+    const actionId = `${profile.nameLower}_${rec.id}`;
+    const actionPath = `recommendations/${rec.id}/actions/${profile.nameLower}`;
     const userActionPath = `userActions/${actionId}`;
     
     // Get existing status to handle transitions
@@ -109,12 +109,13 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
   };
 
   const handleRating = async (rating: number) => {
-    if (!user || user.uid === rec.authorId) return;
+    if (!user || !profile) return;
     
-    const actionPath = `recommendations/${rec.id}/actions/${user.uid}`;
-    const userActionPath = `userActions/${user.uid}_${rec.id}`;
+    const actionPath = `recommendations/${rec.id}/actions/${profile.nameLower}`;
+    const userActionPath = `userActions/${profile.nameLower}_${rec.id}`;
     const recRef = doc(db, 'recommendations', rec.id);
-    const authorRef = doc(db, 'users', rec.authorId);
+    const authorId = rec.authorId || rec.authorName.toLowerCase().trim(); // compatibility
+    const authorRef = doc(db, 'users', authorId);
     
     const oldRating = userAction?.rating || 0;
     if (oldRating === rating) return;
@@ -128,21 +129,17 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
         
         if (!recDoc.exists()) throw new Error("Recommendation does not exist!");
         
+        const actionData = { 
+          rating, 
+          userId: user.uid,
+          userName: profile.name,
+          recommendationId: rec.id,
+          createdAt: serverTimestamp() 
+        };
+
         // Update Action records
-        transaction.set(doc(db, actionPath), { 
-          rating, 
-          userId: user.uid,
-          userName: profile?.name || user.displayName || 'Anonymous',
-          recommendationId: rec.id,
-          createdAt: serverTimestamp() 
-        }, { merge: true });
-        transaction.set(doc(db, userActionPath), { 
-          rating, 
-          userId: user.uid,
-          userName: profile?.name || user.displayName || 'Anonymous',
-          recommendationId: rec.id,
-          createdAt: serverTimestamp() 
-        }, { merge: true });
+        transaction.set(doc(db, actionPath), actionData, { merge: true });
+        transaction.set(doc(db, userActionPath), actionData, { merge: true });
 
         // Update Recommendation Stats
         const recData = recDoc.data();
@@ -215,7 +212,7 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
       layout
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className="group relative flex flex-col overflow-hidden rounded-2xl bg-slate-900 shadow-2xl transition-all duration-500 hover:-translate-y-2 hover:shadow-yellow-400/5"
+      className="group relative flex h-full flex-col overflow-hidden rounded-2xl bg-slate-900 shadow-2xl transition-all duration-500 hover:-translate-y-2 hover:shadow-yellow-400/5"
     >
       {/* Poster Image */}
       <div className="relative aspect-[2/3] w-full overflow-hidden">
@@ -364,8 +361,8 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
         <h3 className="line-clamp-1 text-sm font-black uppercase tracking-wider leading-tight text-white transition-colors group-hover:text-yellow-400">
           {rec.title}
         </h3>
-        <div className="mt-3 flex items-start justify-between gap-3">
-          <p className="line-clamp-3 text-[11px] italic text-slate-400 group-hover:text-slate-300 transition-colors leading-relaxed">
+        <div className="mt-3 flex items-start justify-between gap-3 min-h-[4.5rem]">
+          <p className="line-clamp-3 text-[11px] italic text-slate-400 group-hover:text-slate-300 transition-colors leading-relaxed grow">
             "{rec.comment}"
           </p>
           {rec.averageRating && (
@@ -383,35 +380,37 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
 
         <div className="mt-4 mb-2 flex flex-col items-center justify-center gap-2 py-2 rounded-2xl bg-slate-950/60 border border-white/5 ring-1 ring-inset ring-white/5 shadow-inner">
           <div className="flex items-center gap-2.5">
-            {[1, 2, 3, 4, 5].map((star) => (
-              <button
-                key={star}
-                disabled={user?.uid === rec.authorId}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleRating(star);
-                }}
-                className={cn(
-                  "transition-all duration-300 transform active:scale-90",
-                  user?.uid !== rec.authorId && "hover:scale-135 cursor-pointer",
-                  user?.uid === rec.authorId && "cursor-default opacity-20",
-                  (userAction?.rating || 0) >= star 
-                    ? "text-yellow-400 drop-shadow-[0_0_12px_rgba(250,204,21,0.5)]" 
-                    : "text-slate-800 hover:text-slate-600"
-                )}
-              >
-                <Star 
+            {[1, 2, 3, 4, 5].map((star) => {
+              const isAuthor = profile?.nameLower === rec.authorId || profile?.nameLower === rec.authorName.toLowerCase();
+              return (
+                <button
+                  key={star}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (!isAuthor) handleRating(star);
+                  }}
                   className={cn(
-                    "h-4 w-4", 
-                    (userAction?.rating || 0) >= star && "fill-current"
-                  )} 
-                />
-              </button>
-            ))}
+                    "transition-all duration-300 transform active:scale-90",
+                    !isAuthor && "hover:scale-135 cursor-pointer",
+                    isAuthor && "cursor-default opacity-20",
+                    (userAction?.rating || 0) >= star 
+                      ? "text-yellow-400 drop-shadow-[0_0_12px_rgba(250,204,21,0.5)]" 
+                      : "text-slate-800 hover:text-slate-600"
+                  )}
+                >
+                  <Star 
+                    className={cn(
+                      "h-4 w-4", 
+                      (userAction?.rating || 0) >= star && "fill-current"
+                    )} 
+                  />
+                </button>
+              );
+            })}
           </div>
           <div className="h-4 flex items-center px-2 overflow-hidden w-full justify-center">
-            {user?.uid === rec.authorId ? (
+            {profile?.nameLower === rec.authorId || profile?.nameLower === rec.authorName.toLowerCase() ? (
               <span className="text-[8px] font-black text-slate-600 uppercase tracking-tight whitespace-nowrap">Office Average Rating</span>
             ) : (
               <span className={cn(
@@ -447,9 +446,11 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
 
         <div className="mt-auto pt-3 flex items-center justify-between border-t border-slate-800/50">
           <div className="flex items-center -space-x-2">
-             <div className="w-6 h-6 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-500">
-               {rec.authorName.slice(0, 1)}
-             </div>
+             <img 
+               src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${rec.authorName}`}
+               alt={rec.authorName}
+               className="w-6 h-6 rounded-full bg-slate-800 border border-slate-700"
+             />
           </div>
           
           <div className="flex gap-3 text-slate-500">

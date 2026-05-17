@@ -21,22 +21,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     let unsubscribeProfile: (() => void) | undefined;
+    const savedName = localStorage.getItem('office_cinema_name');
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       setUser(user);
-      if (user) {
-        // Use onSnapshot to listen for profile changes (like avatar)
-        unsubscribeProfile = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
+      
+      if (user && savedName) {
+        // Auto-recover profile if we have a saved name
+        const usernameId = savedName.toLowerCase().trim();
+        const userRef = doc(db, 'users', usernameId);
+        
+        unsubscribeProfile = onSnapshot(userRef, (docSnap) => {
           if (docSnap.exists()) {
             setProfile(docSnap.data());
           }
-        }, (error) => {
-          handleFirestoreError(error, OperationType.GET, `users/${user.uid}`);
         });
-      } else {
-        setProfile(null);
-        if (unsubscribeProfile) unsubscribeProfile();
       }
+      
       setLoading(false);
     });
 
@@ -54,9 +55,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       const usernameId = name.toLowerCase().trim();
       const usernameRef = doc(db, 'usernames', usernameId);
-      const userRef = doc(db, 'users', user.uid);
+      const userRef = doc(db, 'users', usernameId); // Use usernameId instead of user.uid for persistent profile
       
-      // 2. Check if username is already taken
       const usernameDoc = await getDoc(usernameRef).catch(err => {
         console.error("Username check failed:", err);
         handleFirestoreError(err, OperationType.GET, `usernames/${usernameId}`);
@@ -66,22 +66,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (usernameDoc && usernameDoc.exists()) {
         const data = usernameDoc.data();
-        console.log(`Checking existing name "${name}" owned by ${data.ownerId}, provided passcode: ${passcode === data.passcode ? 'MATCH' : 'MISMATCH'}`);
         if (data.ownerId !== user.uid) {
-          // If the name is taken by a different UID:
-          // 1. Check if user provided the correct passcode to "log in"
           if (data.passcode !== passcode) {
-            console.warn(`Username "${name}" is taken and passcode was incorrect.`);
             throw new Error('USERNAME_TAKEN');
           }
-          console.log(`Username "${name}" correctly claimed by providing matching passcode.`);
-          isReturningUser = true;
-        } else {
-          console.log(`Current session already owns the username "${name}".`);
-          isReturningUser = true;
+          // Matching passcode - we allow this user to "take over" the name
+          // In a real app we'd link accounts, here we just use the name-based userRef
         }
-      } else {
-        console.log(`Username "${name}" is available. Claiming it now...`);
       }
       
       // 3. Prepare profile
@@ -90,8 +81,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const profileData = {
         name,
-        nameLower: name.toLowerCase().trim(),
-        passcode, // Keep passcode in profile for easy re-auth/verification if needed
+        nameLower: usernameId,
+        passcode,
+        uid: user.uid, // Store current UID
         avatar: existingData?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`,
         watchedCount: existingData?.watchedCount || 0,
         recsCount: existingData?.recsCount || 0,
@@ -103,11 +95,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         // Reserve/Update the name
         await setDoc(usernameRef, { ownerId: user.uid, passcode }, { merge: true });
-        // Update user profile
-        await setDoc(userRef, profileData);
+        // Update user profile (keyed by username)
+        await setDoc(userRef, profileData, { merge: true });
+        
+        localStorage.setItem('office_cinema_name', name);
         setProfile(profileData);
       } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `users/${user.uid} or usernames/${usernameId}`);
+        handleFirestoreError(err, OperationType.WRITE, `users/${usernameId} or usernames/${usernameId}`);
       }
     } catch (error) {
       console.error('AuthContext Login failed:', error);
@@ -119,6 +113,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
+    localStorage.removeItem('office_cinema_name');
     await auth.signOut();
   };
 
