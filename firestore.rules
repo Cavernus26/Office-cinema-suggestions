@@ -32,7 +32,7 @@ service cloud.firestore {
 
     function isValidUsernameIndex(data) {
       return data.keys().hasAll(['ownerId', 'passcode']) &&
-             data.ownerId is string && data.ownerId.size() <= 128 &&
+             data.ownerId == request.auth.uid &&
              data.passcode is string && data.passcode.size() > 0;
     }
 
@@ -82,7 +82,7 @@ service cloud.firestore {
       allow get: if isSignedIn();
       allow list: if isSignedIn();
 
-      allow create: if isSignedIn() && (isOwner(userId) || isNameOwner(userId)) && isValidUser(incoming());
+      allow create: if isSignedIn() && (isOwner(userId) || isNameOwner(userId) || incoming().uid == request.auth.uid) && isValidUser(incoming());
       
       allow update: if isSignedIn() && (isOwner(userId) || isNameOwner(userId) || isNameMatch(existing().name)) && (
         // Allow updating stats or profile data

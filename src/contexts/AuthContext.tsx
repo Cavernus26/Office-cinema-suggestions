@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { auth, db } from '../lib/firebase';
 import { onAuthStateChanged, signInAnonymously, User } from 'firebase/auth';
-import { collection, query as fsQuery, where, getDocs, doc, getDoc, setDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
+import { collection, query as fsQuery, where, getDocs, doc, getDoc, setDoc, serverTimestamp, onSnapshot, writeBatch } from 'firebase/firestore';
 import { handleFirestoreError, OperationType } from '../lib/firebase';
 
 interface AuthContextType {
@@ -93,10 +93,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
       
       try {
+        const batch = writeBatch(db);
+        
         // Reserve/Update the name
-        await setDoc(usernameRef, { ownerId: user.uid, passcode }, { merge: true });
+        batch.set(usernameRef, { ownerId: user.uid, passcode }, { merge: true });
+        
         // Update user profile (keyed by username)
-        await setDoc(userRef, profileData, { merge: true });
+        batch.set(userRef, profileData, { merge: true });
+        
+        await batch.commit();
         
         localStorage.setItem('office_cinema_name', name);
         setProfile(profileData);
