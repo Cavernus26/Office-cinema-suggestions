@@ -320,70 +320,69 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
               exit={{ opacity: 0, y: 20 }}
               className="absolute bottom-3 left-2 right-2 z-20 flex flex-col gap-2"
             >
-              <div className="flex gap-1">
+              <div className="flex flex-col gap-1.5 sm:flex-row sm:gap-2">
                 <button
                   onClick={() => handleStatusChange(userAction?.status === 'Watching' ? null : 'Watching')}
                   className={cn(
-                    "flex flex-1 items-center justify-center gap-1 rounded-full py-2.5 text-[9px] font-black uppercase transition-all",
-                    userAction?.status === 'Watching' ? "bg-indigo-600 text-white" : "bg-slate-800/80 text-white backdrop-blur-md hover:bg-slate-700"
+                    "flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-[10px] sm:text-[11px] font-black uppercase transition-all",
+                    userAction?.status === 'Watching' ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/20" : "bg-slate-800/90 text-white backdrop-blur-md hover:bg-slate-700"
                   )}
                 >
-                  <Play className="h-2.5 w-2.5 fill-current" />
-                  <span className="truncate tracking-wide">Watching</span>
+                  <Play className={cn("h-3 w-3", userAction?.status === 'Watching' ? "fill-current" : "")} />
+                  <span className="tracking-wider">Watching</span>
                 </button>
                 <button
                   onClick={() => handleStatusChange(userAction?.status === 'Completed' ? null : 'Completed')}
                   className={cn(
-                    "flex flex-1 items-center justify-center gap-1 rounded-full py-2.5 text-[9px] font-black uppercase transition-all",
-                    userAction?.status === 'Completed' ? "bg-green-600 text-white" : "bg-slate-800/80 text-white backdrop-blur-md hover:bg-slate-700"
+                    "flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-[10px] sm:text-[11px] font-black uppercase transition-all",
+                    userAction?.status === 'Completed' ? "bg-green-600 text-white shadow-lg shadow-green-500/20" : "bg-slate-800/90 text-white backdrop-blur-md hover:bg-slate-700"
                   )}
                 >
-                  <CheckCircle className="h-2.5 w-2.5" />
-                  <span className="truncate tracking-wide">Watched</span>
+                  <CheckCircle className="h-3 w-3" />
+                  <span className="tracking-wider">Watched</span>
                 </button>
               </div>
               <button
                 onClick={() => handleStatusChange(userAction?.status === 'Plan to Watch' ? null : 'Plan to Watch')}
                 className={cn(
-                  "flex w-full items-center justify-center gap-1 rounded-full py-2.5 text-[9px] font-black uppercase transition-all border",
+                  "flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-[10px] sm:text-[11px] font-black uppercase transition-all border",
                   userAction?.status === 'Plan to Watch' 
-                    ? "bg-yellow-400 text-slate-950 border-yellow-400" 
-                    : "bg-slate-800/80 text-white backdrop-blur-md border-transparent hover:bg-slate-700 hover:border-slate-600"
+                    ? "bg-yellow-400 text-slate-950 border-yellow-400 shadow-lg shadow-yellow-400/20" 
+                    : "bg-slate-800/90 text-white backdrop-blur-md border-transparent hover:bg-slate-700 hover:border-slate-600"
                 )}
               >
-                {userAction?.status === 'Plan to Watch' ? <BookmarkCheck className="h-3 w-3" /> : <BookmarkPlus className="h-3 w-3" />}
-                <span className="truncate tracking-wide">{userAction?.status === 'Plan to Watch' ? 'In Watchlist' : 'Add to Watchlist'}</span>
+                {userAction?.status === 'Plan to Watch' ? <BookmarkCheck className="h-3.5 w-3.5" /> : <BookmarkPlus className="h-3.5 w-3.5" />}
+                <span className="tracking-wider">{userAction?.status === 'Plan to Watch' ? 'In Watchlist' : 'Add to Watchlist'}</span>
               </button>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
-      {/* Info Section */}
-      <div className="flex flex-1 flex-col p-3">
-        <div className="text-[9px] font-black text-yellow-400 uppercase tracking-widest mb-1">@{rec.authorName.toLowerCase()}</div>
-        <h3 className="line-clamp-1 text-xs font-black uppercase tracking-wider leading-tight text-white transition-colors group-hover:text-yellow-400">
+      <div className="flex flex-1 flex-col p-4">
+        <div className="text-[10px] font-black text-yellow-400 uppercase tracking-[0.2em] mb-1.5 drop-shadow-sm">@{rec.authorName.toLowerCase()}</div>
+        <h3 className="line-clamp-1 text-sm font-black uppercase tracking-wider leading-tight text-white transition-colors group-hover:text-yellow-400">
           {rec.title}
         </h3>
-        <div className="mt-2 flex items-center justify-between">
-          <p className="line-clamp-2 text-[10px] italic text-slate-400 group-hover:text-slate-300 transition-colors">
+        <div className="mt-3 flex items-start justify-between gap-3">
+          <p className="line-clamp-3 text-[11px] italic text-slate-400 group-hover:text-slate-300 transition-colors leading-relaxed">
             "{rec.comment}"
           </p>
           {rec.averageRating && (
-            <div className="ml-2 flex flex-col items-end gap-0.5 shrink-0">
-              <div className="flex items-center gap-1 rounded-lg bg-yellow-400/10 px-2 py-1 border border-yellow-400/20 shadow-sm">
-                <Star className="h-2.5 w-2.5 text-yellow-400 fill-current" />
-                <span className="text-[10px] font-black text-yellow-400">{rec.averageRating.toFixed(1)}</span>
+            <div className="flex flex-col items-end gap-1 shrink-0">
+              <div className="flex items-center gap-1 rounded-xl bg-yellow-400/10 px-2.5 py-1.5 border border-yellow-400/20 shadow-inner">
+                <Star className="h-3 w-3 text-yellow-400 fill-current" />
+                <span className="text-xs font-black text-yellow-400">{rec.averageRating.toFixed(1)}</span>
               </div>
-              <span className="text-[7px] font-bold text-slate-600 uppercase tracking-tighter">
+              <span className="text-[8px] font-bold text-slate-600 uppercase tracking-tight">
                 {rec.ratingCount} {rec.ratingCount === 1 ? 'rating' : 'ratings'}
               </span>
             </div>
           )}
         </div>
 
-        <div className="mt-2 mb-1 flex flex-col items-center justify-center gap-1 py-1.5 rounded-xl bg-slate-950/40 border border-white/5 ring-1 ring-inset ring-white/5">
-          <div className="flex items-center gap-1.5">
+        <div className="mt-4 mb-2 flex flex-col items-center justify-center gap-2 py-2 rounded-2xl bg-slate-950/60 border border-white/5 ring-1 ring-inset ring-white/5 shadow-inner">
+          <div className="flex items-center gap-2.5">
             {[1, 2, 3, 4, 5].map((star) => (
               <button
                 key={star}
@@ -395,28 +394,28 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
                 }}
                 className={cn(
                   "transition-all duration-300 transform active:scale-90",
-                  user?.uid !== rec.authorId && "hover:scale-125 cursor-pointer",
+                  user?.uid !== rec.authorId && "hover:scale-135 cursor-pointer",
                   user?.uid === rec.authorId && "cursor-default opacity-20",
                   (userAction?.rating || 0) >= star 
-                    ? "text-yellow-400 drop-shadow-[0_0_10px_rgba(250,204,21,0.4)]" 
+                    ? "text-yellow-400 drop-shadow-[0_0_12px_rgba(250,204,21,0.5)]" 
                     : "text-slate-800 hover:text-slate-600"
                 )}
               >
                 <Star 
                   className={cn(
-                    "h-3.5 w-3.5", 
+                    "h-4 w-4", 
                     (userAction?.rating || 0) >= star && "fill-current"
                   )} 
                 />
               </button>
             ))}
           </div>
-          <div className="h-3 flex items-center">
+          <div className="h-4 flex items-center px-4 overflow-hidden w-full justify-center">
             {user?.uid === rec.authorId ? (
-              <span className="text-[7px] font-black text-slate-700 uppercase tracking-widest">office average rating</span>
+              <span className="text-[9px] font-black text-slate-600 uppercase tracking-[0.15em] whitespace-nowrap">office average rating</span>
             ) : (
               <span className={cn(
-                "text-[7px] font-black uppercase tracking-widest",
+                "text-[9px] font-black uppercase tracking-widest whitespace-nowrap",
                 userAction?.rating ? "text-yellow-500/80" : "text-slate-500"
               )}>
                 {userAction?.rating ? `Your Rating: ${userAction.rating} / 5` : 'Rate this performance'}
