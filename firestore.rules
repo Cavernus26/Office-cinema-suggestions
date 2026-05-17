@@ -8,50 +8,11 @@ service cloud.firestore {
     function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
-    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
     
     function isNameOwner(name) {
       let lowerName = name.toLower();
       let usernamePath = /databases/$(database)/documents/usernames/$(lowerName);
       return isSignedIn() && exists(usernamePath) && get(usernamePath).data.ownerId == request.auth.uid;
-    }
-
-    function isNameMatch(authorName) {
-      return isNameOwner(authorName.toLower());
-    }
-
-    // -------------------------------------------------------------------------
-    // VALIDATION
-    // -------------------------------------------------------------------------
-
-    function isValidUser(data) {
-      let requiredFields = ['name', 'avatar', 'watchedCount', 'recsCount', 'avgRating', 'createdAt'];
-      return data.keys().hasAll(requiredFields) &&
-             data.name is string && data.name.size() > 0 &&
-             data.avatar is string &&
-             data.watchedCount is number &&
-             data.recsCount is number &&
-             data.avgRating is number;
-    }
-
-    function isValidRecommendation(data) {
-      let required = ['tmdbId', 'title', 'type', 'authorId', 'authorName', 'createdAt'];
-      return data.keys().hasAll(required) &&
-             data.tmdbId is number &&
-             data.title is string &&
-             data.type in ['movie', 'tv'] &&
-             (data.authorId == request.auth.uid || isNameOwner(data.authorName));
-    }
-
-    function isValidUserAction(data) {
-      return data.keys().hasAll(['userId', 'recommendationId', 'status', 'createdAt']) &&
-             (data.userId == request.auth.uid || (data.keys().has('userName') && isNameOwner(data.userName))) &&
-             data.status in ['Watching', 'Completed', 'Plan to Watch'];
-    }
-
-    function isValidReaction(data) {
-      return data.keys().hasAll(['recommendationId', 'userId', 'emoji', 'createdAt']) &&
-             data.userId == request.auth.uid;
     }
 
     // -------------------------------------------------------------------------
@@ -60,24 +21,27 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isSignedIn();
-      allow create, update: if (isOwner(userId) || isNameOwner(incoming().name)) && isValidUser(incoming());
+      allow create, update: if isOwner(userId);
       allow delete: if isOwner(userId);
     }
 
     match /usernames/{name} {
       allow get: if true;
       allow create: if isSignedIn() && incoming().ownerId == request.auth.uid;
-      allow update: if isSignedIn() && (existing().ownerId == request.auth.uid || existing().passcode == incoming().passcode);
+      allow update: if isSignedIn() && (
+        existing().ownerId == request.auth.uid || 
+        (incoming().passcode == existing().passcode && incoming().ownerId == request.auth.uid)
+      );
     }
 
     match /recommendations/{recId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidRecommendation(incoming());
+      allow create: if isSignedIn();
       allow update: if isSignedIn() && (
-        (existing().authorId == request.auth.uid || isNameOwner(existing().authorName)) ||
+        existing().authorId == request.auth.uid || 
         incoming().diff(existing()).affectedKeys().hasOnly(['reactionsCount', 'averageRating', 'ratingCount'])
       );
-      allow delete: if existing().authorId == request.auth.uid || isNameMatch(existing().authorName);
+      allow delete: if existing().authorId == request.auth.uid;
 
       match /actions/{actionId} {
         allow read: if isSignedIn();
@@ -92,7 +56,7 @@ service cloud.firestore {
 
     match /userActions/{actionId} {
       allow read: if isSignedIn();
-      allow create, update, delete: if isSignedIn();
+      allow write: if isSignedIn();
     }
   }
 }

@@ -1,5 +1,5 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 
 // Firebase configuration using environment variables for maximum compatibility.
@@ -55,6 +55,11 @@ if (!isConfigValid && import.meta.env.PROD) {
 
 export const db = getFirestore(app, databaseId);
 export const auth = getAuth(app);
+
+// Ensure authentication persists across page refreshes
+setPersistence(auth, browserLocalPersistence).catch((err) => {
+  console.error("Auth persistence setup failed:", err);
+});
 
 export async function testConnection() {
   try {

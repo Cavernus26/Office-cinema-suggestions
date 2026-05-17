@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { LogOut, Film, User, Settings, Palette } from 'lucide-react';
+import { LogOut, Film, User, Settings, Palette, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
 export const TopBar: React.FC<{ onOpenAdd: () => void }> = ({ onOpenAdd }) => {
-  const { profile, logout, user } = useAuth();
+  const { profile, logout, user, upgradeToGoogle } = useAuth();
   const [showMenu, setShowMenu] = useState(false);
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
 
@@ -91,6 +91,24 @@ export const TopBar: React.FC<{ onOpenAdd: () => void }> = ({ onOpenAdd }) => {
                         <Palette className="w-4 h-4" />
                         Change Avatar
                       </button>
+
+                      {user?.isAnonymous && (
+                        <button 
+                          onClick={async () => {
+                            try {
+                              await upgradeToGoogle();
+                              setShowMenu(false);
+                            } catch (e) {
+                              console.error(e);
+                              alert("Upgrade failed. You might already have a Google account. Try logging out and signing in with Google.");
+                            }
+                          }}
+                          className="flex w-full items-center gap-3 px-4 py-3 text-sm text-yellow-400 hover:bg-yellow-400/10 rounded-xl transition-colors font-bold"
+                        >
+                          <ShieldCheck className="w-4 h-4" />
+                          Link Google Account
+                        </button>
+                      )}
                     </>
                   ) : (
                     <div className="p-2">
