@@ -93,7 +93,8 @@ service cloud.firestore {
     }
 
     match /usernames/{name} {
-      allow get: if isSignedIn();
+      // Allow public check to see if a username exists
+      allow get: if true;
       allow create: if isSignedIn() && isValidUsernameIndex(incoming());
       allow update: if isSignedIn() && (
         // Re-claim: Must have old passcode matching

@@ -22,15 +22,27 @@ const firebaseConfig = {
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || localConfig?.storageBucket,
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || localConfig?.messagingSenderId,
   appId: import.meta.env.VITE_FIREBASE_APP_ID || localConfig?.appId,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || localConfig?.measurementId,
 };
 
 const databaseId = import.meta.env.VITE_FIREBASE_DATABASE_ID || localConfig?.firestoreDatabaseId || "(default)";
 
+if (import.meta.env.PROD) {
+  console.log("DEBUG - Database ID:", databaseId);
+}
+
 // Validation helper for production
-const isConfigValid = !!(firebaseConfig.apiKey && firebaseConfig.projectId);
+const isConfigValid = !!(firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.apiKey !== "missing");
+
+if (!isConfigValid && import.meta.env.PROD) {
+  console.error("DEBUG - Current Config:", {
+    hasApiKey: !!firebaseConfig.apiKey,
+    hasProjectId: !!firebaseConfig.projectId,
+    apiKeyStart: firebaseConfig.apiKey?.substring(0, 5) + "..."
+  });
+}
 
 // Only initialize if we have at least an API key to avoid immediate crash during build or boot
-// If configuration is missing, we create a placeholder app that will fail gracefully when used
 const app = (getApps().length === 0) 
   ? (isConfigValid 
       ? initializeApp(firebaseConfig) 

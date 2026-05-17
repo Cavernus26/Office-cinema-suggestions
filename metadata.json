@@ -2,5 +2,5 @@
   "name": "CineShare",
   "description": "A premium team movie and TV show recommendation platform with real-time updates and community rankings.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

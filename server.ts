@@ -102,7 +102,7 @@ async function createServer() {
 // Start listener only if not running in a serverless environment (like Vercel functions)
 if (process.env.NODE_ENV !== "production" || !process.env.VERCEL) {
   createServer().then((app) => {
-    const PORT = process.env.PORT || 3000;
+    const PORT = parseInt(process.env.PORT || '3000', 10);
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`Server running on http://localhost:${PORT}`);
     });
