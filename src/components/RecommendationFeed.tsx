@@ -56,6 +56,41 @@ export const RecommendationFeed: React.FC<RecommendationFeedProps> = ({ view = '
     };
   }, [user?.uid, profile?.name]);
 
+  // Background migration for recommendations missing genres
+  useEffect(() => {
+    if (loading || recs.length === 0) return;
+
+    const itemsToPatch = recs.filter(r => !r.genres || r.genres.length === 0);
+    if (itemsToPatch.length === 0) return;
+
+    const patchGenres = async () => {
+      console.log(`[Migration] Found ${itemsToPatch.length} items missing genres. Patching...`);
+      const { tmdbService } = await import('../services/tmdb');
+      const { doc, updateDoc } = await import('firebase/firestore');
+      const { db } = await import('../lib/firebase');
+
+      for (const item of itemsToPatch) {
+        try {
+          const details = await tmdbService.getDetails(item.tmdbId, item.type);
+          if (details && details.genres) {
+            const genres = details.genres.map((g: any) => {
+              if (g.name === 'Science Fiction') return 'Sci-Fi';
+              if (g.name === 'Sci-Fi & Fantasy') return 'Sci-Fi';
+              return g.name;
+            });
+            
+            await updateDoc(doc(db, 'recommendations', item.id), { genres });
+            console.log(`[Migration] Patched genres for: ${item.title}`);
+          }
+        } catch (err) {
+          console.error(`[Migration] Failed to patch ${item.title}:`, err);
+        }
+      }
+    };
+
+    patchGenres();
+  }, [recs.length, loading]);
+
   const availableUsers = React.useMemo(() => {
     const userMap = new Map<string, string>();
     recs.forEach(r => {
@@ -85,7 +120,12 @@ export const RecommendationFeed: React.FC<RecommendationFeedProps> = ({ view = '
       if (!userMatch) return false;
 
       // 3. Genre Filter
-      const genreMatch = !filters.genre || (r.genres && r.genres.includes(filters.genre));
+      const genreMatch = !filters.genre || (r.genres && r.genres.some(g => {
+        if (filters.genre === 'Sci-Fi') {
+          return g === 'Sci-Fi' || g === 'Science Fiction' || g === 'Sci-Fi & Fantasy';
+        }
+        return g === filters.genre;
+      }));
       if (!genreMatch) return false;
 
       // 4. View Specific Logic

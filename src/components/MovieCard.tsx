@@ -412,7 +412,19 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
         <h3 className="line-clamp-1 text-sm font-black uppercase tracking-wider leading-tight text-white transition-colors group-hover:text-yellow-400">
           {rec.title}
         </h3>
-          <div className="mt-3 flex items-start justify-between gap-3 h-[4.5rem]">
+        
+        {/* Genre Tags */}
+        {rec.genres && rec.genres.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-1.5 opacity-80 group-hover:opacity-100 transition-opacity">
+            {rec.genres.slice(0, 3).map((genre) => (
+              <span key={genre} className="px-1.5 py-0.5 rounded-md bg-slate-800 text-[7px] font-black uppercase tracking-widest text-slate-400 border border-slate-700 whitespace-nowrap">
+                {genre}
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-3 flex items-start justify-between gap-3 h-[4.5rem]">
             <div className="overflow-y-auto grow h-full pr-1 custom-scrollbar">
               <p className="text-[11px] italic text-slate-400 group-hover:text-slate-300 transition-colors leading-relaxed">
                 "{rec.comment}"

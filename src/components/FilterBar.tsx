@@ -24,6 +24,16 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 }) => {
   const currentUserName = availableUsers.find(u => u.id === filters.userId)?.name || 'All Users';
 
+  const commonGenres = [
+    "Action", "Adventure", "Animation", "Comedy", "Crime", "Documentary", "Drama", 
+    "Family", "Fantasy", "History", "Horror", "Music", "Mystery", "Romance", 
+    "Sci-Fi", "Science Fiction", "TV Movie", "Thriller", "War", "Western",
+    "Action & Adventure", "Kids", "News", "Reality", "Sci-Fi & Fantasy", "Soap", "Talk", "War & Politics"
+  ];
+
+  // Combine available genres from data with common ones, then deduplicate and sort
+  const allGenreOptions = Array.from(new Set([...availableGenres, ...commonGenres])).sort();
+
   return (
     <div className="flex flex-col gap-6 w-full">
       {/* User Selection (Horizontal Chips) */}
@@ -70,7 +80,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                 className="w-full appearance-none bg-slate-900 border border-slate-800 rounded-2xl px-5 py-3 text-xs font-bold text-slate-200 outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all cursor-pointer hover:border-slate-700 uppercase tracking-widest"
               >
                 <option value="">All Genres</option>
-                {availableGenres.map(genre => (
+                {allGenreOptions.map(genre => (
                   <option key={genre} value={genre}>{genre}</option>
                 ))}
               </select>
