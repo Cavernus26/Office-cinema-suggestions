@@ -75,8 +75,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (name: string, passcode: string) => {
     const cleanedName = name.trim();
-    const usernameId = cleanedName.toLowerCase();
+    // Normalize ID to be URL/ID friendly and consistent
+    const usernameId = cleanedName.toLowerCase().replace(/\s+/g, '_');
     const email = `${usernameId}@office-cinema.local`;
+    
+    console.log(`[Login] Attempting login for: ${cleanedName} (ID: ${usernameId})`);
     
     // 1. Check if username exists in our index
     const usernameRef = doc(db, 'usernames', usernameId);
@@ -105,41 +108,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     if (usernameDoc.exists()) {
-      // Returning user/known username - attempt sign in
+      // Username exists in Firestore index
       try {
         await signInWithEmailAndPassword(auth, email, passcode);
         
-        // Check if the user document actually exists, if not, repair it
+        // Successfully signed in - double check and repair profile if needed
         const userRef = doc(db, 'users', auth.currentUser!.uid);
         const userDoc = await getDoc(userRef);
         if (!userDoc.exists()) {
           await createNewProfile(auth.currentUser!.uid, email);
         }
       } catch (error: any) {
-        if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found') {
-          // If the username doc exists but the user is NOT in Auth, something is very wrong.
-          // In this case, we might want to allow "claiming" if we can verify, but for now 
-          // let's stick to the error.
+        if (error.code === 'auth/user-not-found') {
+          // GHOST INDEX: Username doc exists but Auth user is gone.
+          // Allow creating a new user and overwrite the ghost index.
+          try {
+            const result = await createUserWithEmailAndPassword(auth, email, passcode);
+            await createNewProfile(result.user.uid, email);
+          } catch (createError: any) {
+            throw createError;
+          }
+        } else if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
           throw new Error('WRONG_PASSCODE');
+        } else {
+          throw error;
         }
-        throw error;
       }
     } else {
-      // New user (at least index is missing) - attempt sign up
+      // Username NOT in Firestore index - try to create new user
       try {
         const result = await createUserWithEmailAndPassword(auth, email, passcode);
         await createNewProfile(result.user.uid, email);
       } catch (error: any) {
         if (error.code === 'auth/email-already-in-use') {
-          // Auth record exists but Firestore index doesn't. 
-          // Attempt to "claim/recover" by signing in.
+          // GHOST AUTH: Auth record exists but Firestore index doesn't.
+          // Attempt to claim it by signing in.
           try {
             await signInWithEmailAndPassword(auth, email, passcode);
-            // If success, user knew the passcode, let's restore their Firestore data
+            // Success! The user knew the passcode. Restore Firestore docs.
             await createNewProfile(auth.currentUser!.uid, email);
           } catch (signInError: any) {
-            // If sign in fails, it really is taken by someone else (or wrong passcode for ghost user)
-            throw new Error('USERNAME_TAKEN');
+            // If sign-in fails with wrong password, it means someone else owns this email/name
+            if (signInError.code === 'auth/wrong-password' || signInError.code === 'auth/invalid-credential') {
+              throw new Error('USERNAME_TAKEN');
+            }
+            throw signInError;
           }
         } else {
           throw error;
