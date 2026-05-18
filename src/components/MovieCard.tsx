@@ -382,8 +382,8 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
           )}
         </div>
 
-        <div className="mt-4 mb-2 flex flex-col items-center justify-center gap-2 py-3 rounded-2xl bg-slate-950/80 border border-white/10 ring-1 ring-inset ring-white/5 shadow-2xl">
-          <div className="flex items-center gap-3">
+        <div className="mt-4 mb-2 flex flex-col items-center justify-center gap-1.5 py-2.5 rounded-2xl bg-slate-950/80 border border-white/10 ring-1 ring-inset ring-white/5 shadow-2xl">
+          <div className="flex items-center gap-1.5">
             {[1, 2, 3, 4, 5].map((star) => {
               const isAuthor = user?.uid === rec.authorId || profile?.name?.toLowerCase() === rec.authorName?.toLowerCase();
               return (
@@ -400,12 +400,12 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
                     isAuthor && "cursor-default opacity-30",
                     (userAction?.rating || 0) >= star 
                       ? "text-yellow-400 drop-shadow-[0_0_12px_rgba(250,204,21,0.6)]" 
-                      : "text-slate-600 hover:text-slate-400"
+                      : "text-slate-400 hover:text-slate-300"
                   )}
                 >
                   <Star 
                     className={cn(
-                      "h-5 w-5", 
+                      "h-4 w-4", 
                       (userAction?.rating || 0) >= star && "fill-current"
                     )} 
                   />
@@ -413,13 +413,13 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
               );
             })}
           </div>
-          <div className="h-4 flex items-center px-2 overflow-hidden w-full justify-center mt-1">
+          <div className="h-4 flex items-center px-2 overflow-hidden w-full justify-center">
             {profile?.name?.toLowerCase() === rec.authorName?.toLowerCase() ? (
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.1em] whitespace-nowrap">Office Average Rating</span>
+              <span className="text-[9px] font-black text-slate-300 uppercase tracking-[0.1em] whitespace-nowrap">Office Average Rating</span>
             ) : (
               <span className={cn(
-                "text-[10px] font-black uppercase tracking-[0.1em] whitespace-nowrap",
-                userAction?.rating ? "text-yellow-400" : "text-slate-300"
+                "text-[9px] font-black uppercase tracking-[0.1em] whitespace-nowrap",
+                userAction?.rating ? "text-yellow-400" : "text-slate-200"
               )}>
                 {userAction?.rating ? `Your Rating: ${userAction.rating} / 5` : 'Rate this experience'}
               </span>

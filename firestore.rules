@@ -21,7 +21,8 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isSignedIn();
-      allow create, update: if isOwner(userId);
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) || (isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['totalRecommendationRatingSum', 'totalRecommendationRatingCount', 'avgRecommendationRating', 'watchedCount', 'recsCount', 'currentlyWatching']));
       allow delete: if isOwner(userId);
     }
 
