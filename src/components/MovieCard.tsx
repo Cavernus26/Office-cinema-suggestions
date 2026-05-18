@@ -130,82 +130,85 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
     }
 
     try {
-      console.log('DEBUG: Rating transition', { oldRating, newRating: rating });
+      console.log('DEBUG: Rating individual updates start', { oldRating, newRating: rating });
       
-      await runTransaction(db, async (transaction) => {
-        // 1. Get freshest data
-        const recDoc = await transaction.get(recRef);
-        if (!recDoc.exists()) throw new Error("Recommendation missing");
+      const timestamp = serverTimestamp();
+      const actionData: any = {
+        rating,
+        userId: user.uid,
+        userName: profile.name || "Anonymous",
+        recommendationId: rec.id,
+        updatedAt: timestamp
+      };
 
-        let authorDoc = null;
-        if (authorRef) {
-          authorDoc = await transaction.get(authorRef);
-        }
+      if (oldRating === 0) {
+        actionData.createdAt = timestamp;
+      }
 
-        const timestamp = serverTimestamp();
-        
-        // 2. Prepare Action Data
-        const actionData: any = {
-          rating,
-          userId: user.uid,
-          userName: profile.name || "Anonymous",
-          recommendationId: rec.id,
-          updatedAt: timestamp
-        };
+      // Step 1: Update Action Records
+      console.log('DEBUG: Updating action records...');
+      try {
+        await setDoc(doc(db, actionPath), actionData, { merge: true });
+        await setDoc(doc(db, userActionPath), actionData, { merge: true });
+      } catch (e: any) {
+        console.error('DEBUG: Failed to update action records', e);
+        throw new Error(`Action update failed: ${e.message}`);
+      }
 
-        // Only set createdAt on first rating
-        if (oldRating === 0) {
-          actionData.createdAt = timestamp;
-        }
-
-        // 3. Update Action Records
-        transaction.set(doc(db, actionPath), actionData, { merge: true });
-        transaction.set(doc(db, userActionPath), actionData, { merge: true });
-
-        // 4. Update Recommendation
-        const recData = recDoc.data();
-        const rCount = recData.ratingCount || 0;
-        const rAvg = recData.averageRating || 0;
-        const rSum = rAvg * rCount;
-        
-        const newRCount = Math.max(1, rCount + (oldRating === 0 ? 1 : 0));
-        const newRSum = rSum - oldRating + rating;
-        const newRAvg = newRSum / newRCount;
-        
-        transaction.update(recRef, {
-          averageRating: isFinite(newRAvg) ? newRAvg : rating,
-          ratingCount: newRCount
-        });
-
-        // 5. Update Author
-        if (authorRef && authorDoc?.exists()) {
-          const authorData = authorDoc.data();
-          const aSum = authorData.totalRecommendationRatingSum || 0;
-          const aCount = authorData.totalRecommendationRatingCount || 0;
+      // Step 2: Update Recommendation Stats
+      console.log('DEBUG: Updating recommendation stats...');
+      try {
+        const recDoc = await getDoc(recRef);
+        if (recDoc.exists()) {
+          const recData = recDoc.data();
+          const rCount = recData.ratingCount || 0;
+          const rAvg = recData.averageRating || 0;
+          const rSum = rAvg * rCount;
           
-          const newACount = Math.max(1, aCount + (oldRating === 0 ? 1 : 0));
-          const newASum = aSum - oldRating + rating;
-          const newAAvg = newASum / newACount;
+          const newRCount = Math.max(1, rCount + (oldRating === 0 ? 1 : 0));
+          const newRSum = rSum - oldRating + rating;
+          const newRAvg = newRSum / newRCount;
           
-          transaction.update(authorRef, {
-            totalRecommendationRatingSum: newASum,
-            totalRecommendationRatingCount: newACount,
-            avgRecommendationRating: isFinite(newAAvg) ? newAAvg : rating
+          await updateDoc(recRef, {
+            averageRating: isFinite(newRAvg) ? newRAvg : rating,
+            ratingCount: newRCount
           });
         }
-      });
-      
-      console.log('DEBUG: Rating transaction success');
-    } catch (err: any) {
-      console.error('DEBUG: Rating transaction error', err);
-      const msg = err.message || String(err);
-      if (msg.toLowerCase().includes('permission') || msg.toLowerCase().includes('denied')) {
-        alert("Firestore Permission Denied. This usually happens if you try to update a document you don't have access to, even with open rules. Checking if you own the recommendation...");
-      } else {
-        alert(`Rating failed: ${msg}`);
+      } catch (e: any) {
+        console.error('DEBUG: Failed to update recommendation stats', e);
+        throw new Error(`Recommendation stats update failed: ${e.message}`);
       }
-      // Log more details to console for debugging
-      if (err.code) console.error('Firebase Error Code:', err.code);
+
+      // Step 3: Update Author Stats
+      if (authorRef) {
+        console.log('DEBUG: Updating author stats...');
+        try {
+          const authorDoc = await getDoc(authorRef);
+          if (authorDoc.exists()) {
+            const authorData = authorDoc.data();
+            const aSum = authorData.totalRecommendationRatingSum || 0;
+            const aCount = authorData.totalRecommendationRatingCount || 0;
+            
+            const newACount = Math.max(1, aCount + (oldRating === 0 ? 1 : 0));
+            const newASum = aSum - oldRating + rating;
+            const newAAvg = newASum / newACount;
+            
+            await updateDoc(authorRef, {
+              totalRecommendationRatingSum: newASum,
+              totalRecommendationRatingCount: newACount,
+              avgRecommendationRating: isFinite(newAAvg) ? newAAvg : rating
+            });
+          }
+        } catch (e: any) {
+          console.warn('DEBUG: Author stats update failed - possibly non-existent profile', e);
+        }
+      }
+      
+      console.log('DEBUG: Rating individual updates success');
+    } catch (err: any) {
+      console.error('DEBUG: Rating handleRating error', err);
+      const msg = err.message || String(err);
+      alert(`Rating Error: ${msg}`);
     } finally {
       setIsRating(null);
     }
