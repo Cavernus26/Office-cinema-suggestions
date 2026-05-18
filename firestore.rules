@@ -55,35 +55,26 @@ service cloud.firestore {
     match /recommendations/{recId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && isValidRecommendation(incoming());
-      allow delete: if isSignedIn() && existing().authorId == request.auth.uid;
-      
-      allow update: if isSignedIn() && (
-        existing().authorId == request.auth.uid || 
-        incoming().diff(existing()).affectedKeys().hasOnly(['averageRating', 'ratingCount'])
-      );
+      allow update: if isSignedIn() && (isOwner(existing().authorId) || incoming().diff(existing()).affectedKeys().hasOnly(['averageRating', 'ratingCount']));
+      allow delete: if isSignedIn() && isOwner(existing().authorId);
 
       match /ratings/{userId} {
         allow read: if isSignedIn();
-        
-        allow create, update: if isSignedIn() 
-          && request.auth.uid == userId
-          && incoming().rating is number
-          && incoming().rating >= 1 
-          && incoming().rating <= 5
-          && isNotAuthor(recId);
-
-        allow delete: if isOwner(userId);
+        allow create, update: if isSignedIn() && userId == request.auth.uid 
+          && incoming().rating >= 1 && incoming().rating <= 5;
+        allow delete: if isSignedIn() && userId == request.auth.uid;
       }
       
-      match /actions/{actionId} {
+      match /actions/{userId} {
         allow read: if isSignedIn();
-        // actionId is the user's UID in this subcollection
-        allow write: if isSignedIn() && (actionId == request.auth.uid || isOwner(resource.data.userId));
+        allow write: if isSignedIn() && userId == request.auth.uid;
       }
     }
 
     match /userActions/{actionId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      // Allow writing if the action belongs to the user
+      allow write: if isSignedIn() && actionId.startsWith(request.auth.uid);
     }
   }
 }

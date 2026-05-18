@@ -11,14 +11,16 @@ export const Leaderboard: React.FC = () => {
   const [users, setUsers] = useState<any[]>([]);
 
   useEffect(() => {
+    if (!authUser) return;
+
     const q = query(collection(db, 'users'), orderBy('recsCount', 'desc'), limit(12));
     const unsub = onSnapshot(q, (snapshot) => {
       setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'users');
+      console.warn('Silent listener error (users):', error.message);
     });
     return unsub;
-  }, []);
+  }, [authUser?.uid]);
 
   // Sort users for display and filter duplicates (case-insensitive name)
   const uniqueUsers = users.reduce((acc, current) => {

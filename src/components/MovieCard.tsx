@@ -29,7 +29,7 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
     });
     
     const unsubRatings = onSnapshot(collection(db, `recommendations/${rec.id}/ratings`), (snapshot) => {
-      setRatings(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as UserAction)));
+      setRatings(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as any)));
     }, (error) => {
       console.warn('Silent listener error (ratings):', error.message);
     });
@@ -44,6 +44,11 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
   const userRating = user ? ratings.find(r => r.userId === user.uid) : null;
   const completedCount = actions.filter(a => a.status === 'Completed').length;
   const watchingCount = actions.filter(a => a.status === 'Watching').length;
+
+  // Calculate dynamic aggregates from real-time rating documents
+  const dynamicRatingCount = ratings.length;
+  const dynamicRatingSum = ratings.reduce((acc, curr) => acc + (curr.rating || 0), 0);
+  const dynamicAvgRating = dynamicRatingCount > 0 ? dynamicRatingSum / dynamicRatingCount : 0;
 
   const handleStatusChange = async (newStatus: WatchStatus | null) => {
     if (!user || !profile) return;
@@ -149,8 +154,6 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
     setIsRating(rating);
     const ratingSubcollectionPath = `recommendations/${rec.id}/ratings`;
     const ratingRef = doc(db, ratingSubcollectionPath, user.uid);
-    const recRef = doc(db, 'recommendations', rec.id);
-    const authorRef = rec.authorId ? doc(db, 'users', rec.authorId) : null;
     
     const oldRating = userRating?.rating || 0;
     if (oldRating === rating) {
@@ -161,7 +164,9 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
     try {
       console.log('--- START RATING SUBMISSION ---');
       
-      // Step 1: Write the rating to the subcollection
+      // Step 1: Write only to the ratings subcollection.
+      // Aggregate calculations are now done dynamically in the UI
+      // to keep security rules simple and avoid permission errors.
       const timestamp = serverTimestamp();
       const ratingInt = Math.floor(rating);
       
@@ -174,80 +179,22 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
         createdAt: userRating?.createdAt || timestamp
       };
 
-      console.log('FIRESTORE_WRITE: Rating Document', {
-        operation: 'SET_DOC',
+      console.log('FIRESTORE_WRITE: Rating subcollection document', {
         path: ratingRef.path,
-        uid: user.uid,
         payload: ratingData
       });
 
       await setDoc(ratingRef, ratingData, { merge: true });
-      console.log('SUCCESS: Rating write completed', { path: ratingRef.path });
-
-      // Step 2: Fetch all ratings to calculate accurate aggregates
-      console.log('FIRESTORE_READ: Fetching all ratings for aggregate calculation', { path: ratingSubcollectionPath });
-      const ratingsSnap = await getDocs(collection(db, ratingSubcollectionPath));
-      const allRatings = ratingsSnap.docs.map(d => Number(d.data().rating || 0)).filter(r => r > 0);
-      
-      const newCount = allRatings.length;
-      const newSum = allRatings.reduce((a, b) => a + b, 0);
-      const newAvg = newCount > 0 ? newSum / newCount : 0;
-
-      console.log('LOGIC: Aggregates calculated locally', { newCount, newAvg, newSum });
-
-      // Step 3: Update Recommendation aggregates
-      console.log('FIRESTORE_WRITE: Recommendation doc aggregates', {
-        operation: 'UPDATE_DOC',
-        path: recRef.path,
-        uid: user.uid,
-        fields: ['averageRating', 'ratingCount'],
-        payload: { averageRating: newAvg, ratingCount: newCount }
-      });
-      
-      await updateDoc(recRef, {
-        averageRating: Number(newAvg.toFixed(2)),
-        ratingCount: newCount
-      });
-      console.log('SUCCESS: Recommendation aggregates updated', { path: recRef.path });
-
-      // Step 4: Update Author profile aggregates (if permitted)
-      if (authorRef) {
-        try {
-          const authorDoc = await getDoc(authorRef);
-          if (authorDoc.exists()) {
-            const authorData = authorDoc.data();
-            const currentSum = Number(authorData.totalRecommendationRatingSum || 0);
-            const currentCount = Number(authorData.totalRecommendationRatingCount || 0);
-            
-            const updatedSum = currentSum - oldRating + ratingInt;
-            const updatedCount = Math.max(1, currentCount + (oldRating === 0 ? 1 : 0));
-            const updatedAvg = updatedSum / updatedCount;
-
-            await updateDoc(authorRef, {
-              totalRecommendationRatingSum: updatedSum,
-              totalRecommendationRatingCount: updatedCount,
-              avgRecommendationRating: Number(updatedAvg.toFixed(2))
-            });
-            console.log('SUCCESS: Author aggregates updated', { path: authorRef.path });
-          }
-        } catch (authorUpdateErr: any) {
-          console.warn('WARNING: Author aggregate update skipped (likely permission restricted)', {
-            code: authorUpdateErr.code,
-            message: authorUpdateErr.message
-          });
-        }
-      }
-
+      console.log('SUCCESS: Rating write completed (Subcollection only)', { path: ratingRef.path });
       console.log('--- END RATING SUBMISSION: SUCCESS ---');
     } catch (err: any) {
       console.error('--- END RATING SUBMISSION: FAILED ---', {
-        finalError: err.message,
-        finalCode: err.code
+        error: err.message,
+        code: err.code
       });
       
       if (err.code === 'permission-denied') {
-        console.error('PERMISSION DEBUG: Check rules vs payload. Path:', ratingRef.path);
-        alert(`Rating failed: Permission Denied. You might be trying to rate your own movie or have hit a security limit.`);
+        alert("Rating failed: Permission Denied. You cannot rate your own recommendation.");
       } else {
         alert(`Rating failed: ${err.message}`);
       }
@@ -454,14 +401,14 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
           <p className="line-clamp-3 text-[11px] italic text-slate-400 group-hover:text-slate-300 transition-colors leading-relaxed grow">
             "{rec.comment}"
           </p>
-          {rec.averageRating && (
+          {(dynamicRatingCount > 0) && (
             <div className="flex flex-col items-end gap-1 shrink-0">
               <div className="flex items-center gap-1 rounded-xl bg-yellow-400/10 px-2.5 py-1.5 border border-yellow-400/20 shadow-inner">
                 <Star className="h-3 w-3 text-yellow-400 fill-current" />
-                <span className="text-xs font-black text-yellow-400">{rec.averageRating.toFixed(1)}</span>
+                <span className="text-xs font-black text-yellow-400">{dynamicAvgRating.toFixed(1)}</span>
               </div>
               <span className="text-[8px] font-bold text-slate-600 uppercase tracking-tight">
-                {rec.ratingCount} {rec.ratingCount === 1 ? 'rating' : 'ratings'}
+                {dynamicRatingCount} {dynamicRatingCount === 1 ? 'rating' : 'ratings'}
               </span>
             </div>
           )}
