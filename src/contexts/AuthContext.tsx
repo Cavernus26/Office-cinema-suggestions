@@ -82,47 +82,68 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const usernameRef = doc(db, 'usernames', usernameId);
     const usernameDoc = await getDoc(usernameRef);
     
+    const createNewProfile = async (uid: string, userEmail: string) => {
+      const batch = writeBatch(db);
+      batch.set(usernameRef, { ownerId: uid, passcode });
+      
+      const userRef = doc(db, 'users', uid);
+      const profileData = {
+        name: cleanedName,
+        passcode,
+        avatar: getRandomAvatar(uid),
+        watchedCount: 0,
+        recsCount: 0,
+        avgRating: 0,
+        uid: uid,
+        email: userEmail,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+      batch.set(userRef, profileData);
+      await batch.commit();
+      return profileData;
+    };
+
     if (usernameDoc.exists()) {
-      // Returning user - attempt sign in
+      // Returning user/known username - attempt sign in
       try {
         await signInWithEmailAndPassword(auth, email, passcode);
+        
+        // Check if the user document actually exists, if not, repair it
+        const userRef = doc(db, 'users', auth.currentUser!.uid);
+        const userDoc = await getDoc(userRef);
+        if (!userDoc.exists()) {
+          await createNewProfile(auth.currentUser!.uid, email);
+        }
       } catch (error: any) {
-        if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+        if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found') {
+          // If the username doc exists but the user is NOT in Auth, something is very wrong.
+          // In this case, we might want to allow "claiming" if we can verify, but for now 
+          // let's stick to the error.
           throw new Error('WRONG_PASSCODE');
         }
         throw error;
       }
     } else {
-      // New user - attempt sign up
+      // New user (at least index is missing) - attempt sign up
       try {
         const result = await createUserWithEmailAndPassword(auth, email, passcode);
-        const newUser = result.user;
-        
-        // Atomically reserve username and create profile
-        const batch = writeBatch(db);
-        batch.set(usernameRef, { ownerId: newUser.uid, passcode });
-        
-        const userRef = doc(db, 'users', newUser.uid);
-        const profileData = {
-          name: cleanedName,
-          passcode,
-          avatar: getRandomAvatar(newUser.uid),
-          watchedCount: 0,
-          recsCount: 0,
-          avgRating: 0,
-          uid: newUser.uid,
-          email: email,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        };
-        batch.set(userRef, profileData);
-        
-        await batch.commit();
+        await createNewProfile(result.user.uid, email);
       } catch (error: any) {
         if (error.code === 'auth/email-already-in-use') {
-          throw new Error('USERNAME_TAKEN');
+          // Auth record exists but Firestore index doesn't. 
+          // Attempt to "claim/recover" by signing in.
+          try {
+            await signInWithEmailAndPassword(auth, email, passcode);
+            // If success, user knew the passcode, let's restore their Firestore data
+            await createNewProfile(auth.currentUser!.uid, email);
+          } catch (signInError: any) {
+            // If sign in fails, it really is taken by someone else (or wrong passcode for ghost user)
+            throw new Error('USERNAME_TAKEN');
+          }
+        } else {
+          throw error;
         }
-        throw error;
       }
     }
   };
