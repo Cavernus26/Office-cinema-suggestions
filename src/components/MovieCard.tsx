@@ -4,7 +4,7 @@ import { tmdbService } from '../services/tmdb';
 import { motion, AnimatePresence } from 'motion/react';
 import { Play, CheckCircle, Clock, Trash2, Heart, BookmarkPlus, BookmarkCheck, Loader2, Star } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { doc, getDocs, getDoc, collection, deleteDoc, updateDoc, setDoc, query, where, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { doc, getDocs, getDoc, collection, deleteDoc, updateDoc, setDoc, query, where, onSnapshot, serverTimestamp, runTransaction } from 'firebase/firestore';
 import { cn } from '../lib/utils';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -121,13 +121,15 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
     if (oldRating === rating) return;
 
     try {
-      const { runTransaction } = await import('firebase/firestore');
-      
       await runTransaction(db, async (transaction) => {
         const recDoc = await transaction.get(recRef);
-        const authorDoc = await transaction.get(authorRef);
         
         if (!recDoc.exists()) throw new Error("Recommendation does not exist!");
+
+        let authorDoc = null;
+        if (authorRef) {
+          authorDoc = await transaction.get(authorRef);
+        }
         
         const actionData = { 
           rating, 
@@ -143,15 +145,17 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
 
         // Update Recommendation Stats
         const recData = recDoc.data();
-        let newRecRatingSum = (recData.averageRating || 0) * (recData.ratingCount || 0) - oldRating + rating;
+        let currentRatingSum = (recData.averageRating || 0) * (recData.ratingCount || 0);
+        let newRecRatingSum = currentRatingSum - oldRating + rating;
         let newRecRatingCount = (recData.ratingCount || 0) + (oldRating === 0 ? 1 : 0);
+        
         transaction.update(recRef, {
           averageRating: newRecRatingSum / newRecRatingCount,
           ratingCount: newRecRatingCount
         });
 
         // Update Author Stats
-        if (authorRef && authorDoc.exists()) {
+        if (authorRef && authorDoc?.exists()) {
           const authorData = authorDoc.data();
           let newAuthorSum = (authorData.totalRecommendationRatingSum || 0) - oldRating + rating;
           let newAuthorCount = (authorData.totalRecommendationRatingCount || 0) + (oldRating === 0 ? 1 : 0);
@@ -378,10 +382,10 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
           )}
         </div>
 
-        <div className="mt-4 mb-2 flex flex-col items-center justify-center gap-2 py-2 rounded-2xl bg-slate-950/60 border border-white/5 ring-1 ring-inset ring-white/5 shadow-inner">
-          <div className="flex items-center gap-2.5">
+        <div className="mt-4 mb-2 flex flex-col items-center justify-center gap-2 py-3 rounded-2xl bg-slate-950/80 border border-white/10 ring-1 ring-inset ring-white/5 shadow-2xl">
+          <div className="flex items-center gap-3">
             {[1, 2, 3, 4, 5].map((star) => {
-              const isAuthor = user?.uid === rec.authorId || profile?.name.toLowerCase() === rec.authorName.toLowerCase();
+              const isAuthor = user?.uid === rec.authorId || profile?.name?.toLowerCase() === rec.authorName?.toLowerCase();
               return (
                 <button
                   key={star}
@@ -392,16 +396,16 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
                   }}
                   className={cn(
                     "transition-all duration-300 transform active:scale-90",
-                    !isAuthor && "hover:scale-135 cursor-pointer",
-                    isAuthor && "cursor-default opacity-20",
+                    !isAuthor && "hover:scale-125 cursor-pointer",
+                    isAuthor && "cursor-default opacity-30",
                     (userAction?.rating || 0) >= star 
-                      ? "text-yellow-400 drop-shadow-[0_0_12px_rgba(250,204,21,0.5)]" 
-                      : "text-slate-800 hover:text-slate-600"
+                      ? "text-yellow-400 drop-shadow-[0_0_12px_rgba(250,204,21,0.6)]" 
+                      : "text-slate-600 hover:text-slate-400"
                   )}
                 >
                   <Star 
                     className={cn(
-                      "h-4 w-4", 
+                      "h-5 w-5", 
                       (userAction?.rating || 0) >= star && "fill-current"
                     )} 
                   />
@@ -409,15 +413,15 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
               );
             })}
           </div>
-          <div className="h-4 flex items-center px-2 overflow-hidden w-full justify-center">
-            {profile?.nameLower === rec.authorId || profile?.nameLower === rec.authorName.toLowerCase() ? (
-              <span className="text-[8px] font-black text-slate-600 uppercase tracking-tight whitespace-nowrap">Office Average Rating</span>
+          <div className="h-4 flex items-center px-2 overflow-hidden w-full justify-center mt-1">
+            {profile?.name?.toLowerCase() === rec.authorName?.toLowerCase() ? (
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.1em] whitespace-nowrap">Office Average Rating</span>
             ) : (
               <span className={cn(
-                "text-[8px] font-black uppercase tracking-tight whitespace-nowrap",
-                userAction?.rating ? "text-yellow-500/80" : "text-slate-500"
+                "text-[10px] font-black uppercase tracking-[0.1em] whitespace-nowrap",
+                userAction?.rating ? "text-yellow-400" : "text-slate-300"
               )}>
-                {userAction?.rating ? `Your Rating: ${userAction.rating} / 5` : 'Rate this performance'}
+                {userAction?.rating ? `Your Rating: ${userAction.rating} / 5` : 'Rate this experience'}
               </span>
             )}
           </div>

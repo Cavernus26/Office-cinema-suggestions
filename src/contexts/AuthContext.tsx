@@ -3,8 +3,6 @@ import { auth, db } from '../lib/firebase';
 import { 
   onAuthStateChanged, 
   User, 
-  GoogleAuthProvider, 
-  signInWithPopup,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword
 } from 'firebase/auth';
@@ -28,7 +26,6 @@ interface AuthContextType {
   profile: any | null;
   loading: boolean;
   login: (name: string, passcode: string) => Promise<void>;
-  loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -176,12 +173,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const loginWithGoogle = async () => {
-    const provider = new GoogleAuthProvider();
-    const result = await signInWithPopup(auth, provider);
-    await ensureUserDoc(result.user);
-  };
-
   const logout = async () => {
     await auth.signOut();
   };
@@ -192,7 +183,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       profile, 
       loading, 
       login, 
-      loginWithGoogle, 
       logout
     }}>
       {children}
