@@ -8,43 +8,25 @@ service cloud.firestore {
     function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
-    
-    function isValidId(id) { 
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
-    }
-
-    // -------------------------------------------------------------------------
-    // VALIDATORS
-    // -------------------------------------------------------------------------
-    function isValidRecommendation(data) {
-      return data.keys().hasAll(['authorId', 'title', 'comment'])
-        && data.authorId == request.auth.uid
-        && data.title is string && data.title.size() <= 200
-        && data.comment is string && data.comment.size() <= 2000;
-    }
-
-    function isNotAuthor(recId) {
-      // Use the parent path variable if available, or fetch
-      let rec = get(/databases/$(database)/documents/recommendations/$(recId));
-      return rec != null && rec.data.authorId != request.auth.uid;
-    }
 
     // -------------------------------------------------------------------------
     // COLLECTIONS
     // -------------------------------------------------------------------------
 
-    // Deny all by default
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
     match /users/{userId} {
       allow read: if isSignedIn();
+      allow create: if isOwner(userId);
       allow update: if isSignedIn() && (
         isOwner(userId) || 
-        incoming().diff(existing()).affectedKeys().hasOnly(['avgRecommendationRating', 'totalRecommendationRatingSum', 'totalRecommendationRatingCount', 'recsCount', 'watchedCount', 'currentlyWatching'])
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'avgRecommendationRating', 
+          'totalRecommendationRatingSum', 
+          'totalRecommendationRatingCount', 
+          'recsCount', 
+          'watchedCount', 
+          'currentlyWatching'
+        ])
       );
-      allow create: if isOwner(userId);
     }
 
     match /usernames/{name} {
@@ -54,15 +36,14 @@ service cloud.firestore {
 
     match /recommendations/{recId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidRecommendation(incoming());
-      allow update: if isSignedIn() && (isOwner(existing().authorId) || incoming().diff(existing()).affectedKeys().hasOnly(['averageRating', 'ratingCount']));
-      allow delete: if isSignedIn() && isOwner(existing().authorId);
+      allow create: if isSignedIn(); 
+      allow update, delete: if isSignedIn() && (existing().authorId == request.auth.uid);
+      allow update: if isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['averageRating', 'ratingCount']);
 
+      // Subcollections: Ratings and Actions
       match /ratings/{userId} {
         allow read: if isSignedIn();
-        allow create, update: if isSignedIn() && userId == request.auth.uid 
-          && incoming().rating >= 1 && incoming().rating <= 5;
-        allow delete: if isSignedIn() && userId == request.auth.uid;
+        allow write: if isSignedIn() && userId == request.auth.uid;
       }
       
       match /actions/{userId} {
@@ -73,8 +54,15 @@ service cloud.firestore {
 
     match /userActions/{actionId} {
       allow read: if isSignedIn();
-      // Allow writing if the action belongs to the user
-      allow write: if isSignedIn() && actionId.startsWith(request.auth.uid);
+      allow write: if isSignedIn() && (
+        actionId.startsWith(request.auth.uid) || 
+        incoming().userId == request.auth.uid
+      );
+    }
+
+    // Default deny for everything else
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

@@ -4,7 +4,7 @@ import { tmdbService } from '../services/tmdb';
 import { motion, AnimatePresence } from 'motion/react';
 import { Play, CheckCircle, Clock, Trash2, Heart, BookmarkPlus, BookmarkCheck, Loader2, Star } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { doc, getDocs, getDoc, collection, deleteDoc, updateDoc, setDoc, query, where, onSnapshot, serverTimestamp, runTransaction, increment } from 'firebase/firestore';
+import { doc, getDocs, getDoc, collection, deleteDoc, updateDoc, setDoc, query, where, onSnapshot, serverTimestamp, runTransaction, increment, writeBatch } from 'firebase/firestore';
 import { cn } from '../lib/utils';
 import { useAuth } from '../contexts/AuthContext';
 import { getRandomAvatar } from '../lib/avatars';
@@ -70,21 +70,26 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
       
       if (oldStatus === newStatus) return;
 
+      const batch = writeBatch(db);
+
       if (!newStatus) {
         // CLEARING STATUS
-        await deleteDoc(actionRef);
-        await deleteDoc(doc(db, userActionPath));
+        batch.delete(actionRef);
+        batch.delete(doc(db, userActionPath));
         
         if (oldStatus === 'Completed') {
-          await updateDoc(userRef, { watchedCount: increment(-1) });
+          batch.update(userRef, { watchedCount: increment(-1) });
         }
         
         if (oldStatus === 'Watching') {
           const userDoc = await getDoc(userRef);
           if (userDoc.exists() && userDoc.data().currentlyWatching?.id === rec.id) {
-            await updateDoc(userRef, { currentlyWatching: null });
+            batch.update(userRef, { currentlyWatching: null });
           }
         }
+        
+        await batch.commit();
+        console.log('[Status] Status cleared successfully (Batch)');
         return;
       }
 
@@ -97,8 +102,8 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
         createdAt: serverTimestamp(),
       };
 
-      await setDoc(actionRef, actionData, { merge: true });
-      await setDoc(doc(db, userActionPath), actionData, { merge: true });
+      batch.set(actionRef, actionData, { merge: true });
+      batch.set(doc(db, userActionPath), actionData, { merge: true });
 
       // Update aggregate counts based on transition
       let userUpdates: any = {};
@@ -114,7 +119,6 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
       if (newStatus === 'Watching') {
         userUpdates.currentlyWatching = { title: rec.title, id: rec.id };
       } else if (oldStatus === 'Watching') {
-        // Check if we were watching THIS movie
         const userDoc = await getDoc(userRef);
         if (userDoc.exists() && userDoc.data().currentlyWatching?.id === rec.id) {
           userUpdates.currentlyWatching = null;
@@ -122,9 +126,11 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
       }
 
       if (Object.keys(userUpdates).length > 0) {
-        console.log('[Status] Updating user document with:', userUpdates);
-        await updateDoc(userRef, userUpdates);
+        batch.update(userRef, userUpdates);
       }
+
+      await batch.commit();
+      console.log('[Status] Status updated successfully (Batch)', { newStatus });
     } catch (err) {
       console.error('Status change error:', err);
       handleFirestoreError(err, OperationType.WRITE, actionPath);
