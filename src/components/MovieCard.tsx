@@ -130,66 +130,82 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
     }
 
     try {
-      console.log('DEBUG: Submitting rating individually', { rating, oldRating, recId: rec.id });
+      console.log('DEBUG: Rating transition', { oldRating, newRating: rating });
       
-      const timestamp = serverTimestamp();
-      const actionData = { 
-        rating,
-        userId: user.uid,
-        userName: profile.name || "Anonymous",
-        recommendationId: rec.id,
-        updatedAt: timestamp
-      };
+      await runTransaction(db, async (transaction) => {
+        // 1. Get freshest data
+        const recDoc = await transaction.get(recRef);
+        if (!recDoc.exists()) throw new Error("Recommendation missing");
 
-      // 1. Update Actions (similar to handleStatusChange which works)
-      const existingCreatedAt = userAction?.createdAt || null;
-      const finalCreatedAt = (oldRating === 0 || !existingCreatedAt) ? timestamp : existingCreatedAt;
-      
-      await setDoc(doc(db, actionPath), { ...actionData, createdAt: finalCreatedAt }, { merge: true });
-      await setDoc(doc(db, userActionPath), { ...actionData, createdAt: finalCreatedAt }, { merge: true });
+        let authorDoc = null;
+        if (authorRef) {
+          authorDoc = await transaction.get(authorRef);
+        }
 
-      // 2. Update Recommendation Stats
-      const recDoc = await getDoc(recRef);
-      if (recDoc.exists()) {
+        const timestamp = serverTimestamp();
+        
+        // 2. Prepare Action Data
+        const actionData: any = {
+          rating,
+          userId: user.uid,
+          userName: profile.name || "Anonymous",
+          recommendationId: rec.id,
+          updatedAt: timestamp
+        };
+
+        // Only set createdAt on first rating
+        if (oldRating === 0) {
+          actionData.createdAt = timestamp;
+        }
+
+        // 3. Update Action Records
+        transaction.set(doc(db, actionPath), actionData, { merge: true });
+        transaction.set(doc(db, userActionPath), actionData, { merge: true });
+
+        // 4. Update Recommendation
         const recData = recDoc.data();
-        const count = recData.ratingCount || 0;
-        const avg = recData.averageRating || 0;
-        const sum = avg * count;
+        const rCount = recData.ratingCount || 0;
+        const rAvg = recData.averageRating || 0;
+        const rSum = rAvg * rCount;
         
-        const newCount = count + (oldRating === 0 ? 1 : 0);
-        const newSum = sum - oldRating + rating;
+        const newRCount = Math.max(1, rCount + (oldRating === 0 ? 1 : 0));
+        const newRSum = rSum - oldRating + rating;
+        const newRAvg = newRSum / newRCount;
         
-        await updateDoc(recRef, {
-          averageRating: newSum / newCount,
-          ratingCount: newCount
+        transaction.update(recRef, {
+          averageRating: isFinite(newRAvg) ? newRAvg : rating,
+          ratingCount: newRCount
         });
-      }
 
-      // 3. Update Author Stats
-      if (authorRef) {
-        const authorDoc = await getDoc(authorRef);
-        if (authorDoc.exists()) {
+        // 5. Update Author
+        if (authorRef && authorDoc?.exists()) {
           const authorData = authorDoc.data();
-          const currentSum = authorData.totalRecommendationRatingSum || 0;
-          const currentCount = authorData.totalRecommendationRatingCount || 0;
+          const aSum = authorData.totalRecommendationRatingSum || 0;
+          const aCount = authorData.totalRecommendationRatingCount || 0;
           
-          const newAuthorSum = currentSum - oldRating + rating;
-          const newAuthorCount = currentCount + (oldRating === 0 ? 1 : 0);
+          const newACount = Math.max(1, aCount + (oldRating === 0 ? 1 : 0));
+          const newASum = aSum - oldRating + rating;
+          const newAAvg = newASum / newACount;
           
-          await updateDoc(authorRef, {
-            totalRecommendationRatingSum: newAuthorSum,
-            totalRecommendationRatingCount: newAuthorCount,
-            avgRecommendationRating: newAuthorSum / newAuthorCount
+          transaction.update(authorRef, {
+            totalRecommendationRatingSum: newASum,
+            totalRecommendationRatingCount: newACount,
+            avgRecommendationRating: isFinite(newAAvg) ? newAAvg : rating
           });
         }
-      }
+      });
       
-      console.log('DEBUG: Rating individual update success');
+      console.log('DEBUG: Rating transaction success');
     } catch (err: any) {
-      console.error('DEBUG: Rating individual update error', err);
+      console.error('DEBUG: Rating transaction error', err);
       const msg = err.message || String(err);
-      alert(`Rating failed: ${msg}`);
-      handleFirestoreError(err, OperationType.WRITE, actionPath);
+      if (msg.toLowerCase().includes('permission') || msg.toLowerCase().includes('denied')) {
+        alert("Firestore Permission Denied. This usually happens if you try to update a document you don't have access to, even with open rules. Checking if you own the recommendation...");
+      } else {
+        alert(`Rating failed: ${msg}`);
+      }
+      // Log more details to console for debugging
+      if (err.code) console.error('Firebase Error Code:', err.code);
     } finally {
       setIsRating(null);
     }
