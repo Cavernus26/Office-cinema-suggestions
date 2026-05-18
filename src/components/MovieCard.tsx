@@ -154,13 +154,7 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
 
     try {
       console.log('--- START RATING SUBMISSION ---');
-      console.log('DEBUG: PRE-FLIGHT CHECK', {
-        userId: user.uid,
-        recId: rec.id,
-        authorId: rec.authorId,
-        isSelf: user.uid === rec.authorId
-      });
-
+      
       // Step 1: Write the rating to the subcollection
       const timestamp = serverTimestamp();
       const ratingInt = Math.floor(rating);
@@ -181,37 +175,13 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
         payload: ratingData
       });
 
-      try {
-        await setDoc(ratingRef, ratingData, { merge: true });
-        console.log('SUCCESS: Rating write completed', { path: ratingRef.path });
-      } catch (writeErr: any) {
-        console.error('FAILURE: Rating write failed', {
-          path: ratingRef.path,
-          code: writeErr.code,
-          message: writeErr.message,
-          error: writeErr,
-          payload: ratingData
-        });
-        throw writeErr;
-      }
+      await setDoc(ratingRef, ratingData, { merge: true });
+      console.log('SUCCESS: Rating write completed', { path: ratingRef.path });
 
       // Step 2: Fetch all ratings to calculate accurate aggregates
-      // Note: We do this CLIENT SIDE because we don't have Cloud Functions.
-      // This is allowed by the "temporary workaround" rule in firestore.rules.
       console.log('FIRESTORE_READ: Fetching all ratings for aggregate calculation', { path: ratingSubcollectionPath });
-      let allRatings: number[] = [];
-      try {
-        const ratingsSnap = await getDocs(collection(db, ratingSubcollectionPath));
-        allRatings = ratingsSnap.docs.map(d => Number(d.data().rating || 0)).filter(r => r > 0);
-        console.log('SUCCESS: Fetched all ratings', { count: allRatings.length, ratings: allRatings });
-      } catch (fetchErr: any) {
-        console.error('FAILURE: Fetching ratings failed', {
-          path: ratingSubcollectionPath,
-          code: fetchErr.code,
-          message: fetchErr.message
-        });
-        throw fetchErr;
-      }
+      const ratingsSnap = await getDocs(collection(db, ratingSubcollectionPath));
+      const allRatings = ratingsSnap.docs.map(d => Number(d.data().rating || 0)).filter(r => r > 0);
       
       const newCount = allRatings.length;
       const newSum = allRatings.reduce((a, b) => a + b, 0);
@@ -228,35 +198,15 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
         payload: { averageRating: newAvg, ratingCount: newCount }
       });
       
-      try {
-        await updateDoc(recRef, {
-          averageRating: Number(newAvg.toFixed(2)), // Keep it clean
-          ratingCount: newCount
-        });
-        console.log('SUCCESS: Recommendation aggregates updated', { path: recRef.path });
-      } catch (recUpdateErr: any) {
-        console.error('FAILURE: Recommendation aggregate update failed (Wait, is this permitted by rules?)', {
-          path: recRef.path,
-          code: recUpdateErr.code,
-          message: recUpdateErr.message,
-          error: recUpdateErr
-        });
-        throw recUpdateErr;
-      }
+      await updateDoc(recRef, {
+        averageRating: Number(newAvg.toFixed(2)),
+        ratingCount: newCount
+      });
+      console.log('SUCCESS: Recommendation aggregates updated', { path: recRef.path });
 
       // Step 4: Update Author profile aggregates (if permitted)
       if (authorRef) {
-        console.log('FIRESTORE_WRITE: Author doc aggregates', {
-          operation: 'UPDATE_DOC',
-          path: authorRef.path,
-          uid: user.uid,
-          fields: ['totalRecommendationRatingSum', 'totalRecommendationRatingCount', 'avgRecommendationRating']
-        });
-        
         try {
-          // We need current author data to do a delta update or full recalculation.
-          // Since we can't easily recalculate ALL her recommendations, we use a delta if we have it,
-          // OR we just skip if the rule doesn't allow it.
           const authorDoc = await getDoc(authorRef);
           if (authorDoc.exists()) {
             const authorData = authorDoc.data();
@@ -275,12 +225,10 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
             console.log('SUCCESS: Author aggregates updated', { path: authorRef.path });
           }
         } catch (authorUpdateErr: any) {
-          console.warn('WARNING: Author aggregate update failed (usually this is restricted to the owner)', {
-            path: authorRef.path,
+          console.warn('WARNING: Author aggregate update skipped (likely permission restricted)', {
             code: authorUpdateErr.code,
             message: authorUpdateErr.message
           });
-          // Non-critical: don't fail the whole operation if author stats update is forbidden
         }
       }
 
@@ -293,6 +241,7 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
       
       if (err.code === 'permission-denied') {
         console.error('PERMISSION DEBUG: Check rules vs payload. Path:', ratingRef.path);
+        alert(`Rating failed: Permission Denied. You might be trying to rate your own movie or have hit a security limit.`);
       } else {
         alert(`Rating failed: ${err.message}`);
       }
