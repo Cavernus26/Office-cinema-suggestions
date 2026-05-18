@@ -57,86 +57,81 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
   const handleStatusChange = async (newStatus: WatchStatus | null) => {
     if (!user || !profile || isProcessing) return;
     
-    const actionId = `${user.uid}_${rec.id}`;
     const actionPath = `recommendations/${rec.id}/actions/${user.uid}`;
+    const actionId = `${user.uid}_${rec.id}`;
     const userActionPath = `userActions/${actionId}`;
     
     setIsProcessing(true);
     
-    // 1. Get current status directly from Firestore to ensure aggregate counts are accurate
-    // avoiding race conditions with local state
     const actionRef = doc(db, actionPath);
+    const userActionDocRef = doc(db, userActionPath);
     const userRef = doc(db, 'users', user.uid);
     
     try {
-      const currentActionDoc = await getDoc(actionRef);
-      const oldStatus = currentActionDoc.exists() ? currentActionDoc.data().status : null;
-      
-      if (oldStatus === newStatus) return;
-
-      const batch = writeBatch(db);
-
-      if (!newStatus) {
-        // CLEARING STATUS
-        batch.delete(actionRef);
-        batch.delete(doc(db, userActionPath));
+      await runTransaction(db, async (transaction) => {
+        // 1. Get current status directly from Firestore for atomicity
+        const currentActionDoc = await transaction.get(actionRef);
+        const oldStatus = currentActionDoc.exists() ? (currentActionDoc.data() as UserAction).status : null;
         
-        if (oldStatus === 'Completed') {
-          batch.update(userRef, { watchedCount: increment(-1) });
+        // If the targeted state is already the current state, do nothing
+        if (oldStatus === newStatus) return;
+
+        // 2. Read user doc for currently watching consistency
+        const userDoc = await transaction.get(userRef);
+        if (!userDoc.exists()) {
+          console.warn('User document not found during status change');
+          return;
         }
         
-        if (oldStatus === 'Watching') {
-          const userDoc = await getDoc(userRef);
-          if (userDoc.exists() && userDoc.data().currentlyWatching?.id === rec.id) {
-            batch.update(userRef, { currentlyWatching: null });
+        let userUpdates: any = {};
+
+        // 3. Handle watchedCount (credits)
+        // Transition to Completed: +1
+        if (newStatus === 'Completed' && oldStatus !== 'Completed') {
+          userUpdates.watchedCount = increment(1);
+          console.log(`[Transaction] +1 credits for ${user.uid}`);
+        } 
+        // Transition AWAY from Completed: -1
+        else if (oldStatus === 'Completed' && newStatus !== 'Completed') {
+          userUpdates.watchedCount = increment(-1);
+          console.log(`[Transaction] -1 credits for ${user.uid}`);
+        }
+
+        // 4. Handle currentlyWatching
+        if (newStatus === 'Watching') {
+          userUpdates.currentlyWatching = { title: rec.title, id: rec.id };
+        } else if (oldStatus === 'Watching') {
+          const userData = userDoc.data();
+          if (userData.currentlyWatching?.id === rec.id) {
+            userUpdates.currentlyWatching = null;
           }
         }
-        
-        await batch.commit();
-        console.log('[Status] Status cleared successfully (Batch)');
-        return;
-      }
 
-      // SETTING NEW STATUS
-      const actionData = {
-        userId: user.uid,
-        userName: profile?.name || user.displayName || 'Anonymous',
-        recommendationId: rec.id,
-        status: newStatus,
-        createdAt: serverTimestamp(),
-      };
-
-      batch.set(actionRef, actionData, { merge: true });
-      batch.set(doc(db, userActionPath), actionData, { merge: true });
-
-      // Update aggregate counts based on transition
-      let userUpdates: any = {};
-      
-      if (newStatus === 'Completed' && oldStatus !== 'Completed') {
-        userUpdates.watchedCount = increment(1);
-        console.log(`[Status] Incrementing watchedCount for user ${user.uid}`);
-      } else if (oldStatus === 'Completed' && (newStatus !== 'Completed' && newStatus !== null)) {
-        userUpdates.watchedCount = increment(-1);
-        console.log(`[Status] Decrementing watchedCount for user ${user.uid}`);
-      }
-
-      if (newStatus === 'Watching') {
-        userUpdates.currentlyWatching = { title: rec.title, id: rec.id };
-      } else if (oldStatus === 'Watching') {
-        const userDoc = await getDoc(userRef);
-        if (userDoc.exists() && userDoc.data().currentlyWatching?.id === rec.id) {
-          userUpdates.currentlyWatching = null;
+        // 5. Update or Delete status documents
+        if (newStatus === null) {
+          transaction.delete(actionRef);
+          transaction.delete(userActionDocRef);
+        } else {
+          const actionData = {
+            userId: user.uid,
+            userName: profile.name || user.displayName || 'Anonymous',
+            recommendationId: rec.id,
+            status: newStatus,
+            createdAt: serverTimestamp(),
+          };
+          transaction.set(actionRef, actionData, { merge: true });
+          transaction.set(userActionDocRef, actionData, { merge: true });
         }
-      }
 
-      if (Object.keys(userUpdates).length > 0) {
-        batch.update(userRef, userUpdates);
-      }
-
-      await batch.commit();
-      console.log('[Status] Status updated successfully (Batch)', { newStatus });
+        // 6. Finalize user document updates
+        if (Object.keys(userUpdates).length > 0) {
+          transaction.update(userRef, userUpdates);
+        }
+      });
+      
+      console.log('[Status] Status updated via transaction:', { from: userAction?.status, to: newStatus });
     } catch (err) {
-      console.error('Status change error:', err);
+      console.error('Status change error (Transaction):', err);
       handleFirestoreError(err, OperationType.WRITE, actionPath);
     } finally {
       setIsProcessing(false);
