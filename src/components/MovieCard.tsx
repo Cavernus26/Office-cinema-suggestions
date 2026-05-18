@@ -59,27 +59,27 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
     const actionPath = `recommendations/${rec.id}/actions/${user.uid}`;
     const userActionPath = `userActions/${actionId}`;
     
-    // Get existing status to handle transitions
-    const oldStatus = userAction?.status || null;
-    if (oldStatus === newStatus) return; // No change
-
+    // 1. Get current status directly from Firestore to ensure aggregate counts are accurate
+    // avoiding race conditions with local state
+    const actionRef = doc(db, actionPath);
+    const userRef = doc(db, 'users', user.uid);
+    
     try {
-      const userRef = doc(db, 'users', user.uid);
+      const currentActionDoc = await getDoc(actionRef);
+      const oldStatus = currentActionDoc.exists() ? currentActionDoc.data().status : null;
+      
+      if (oldStatus === newStatus) return;
 
       if (!newStatus) {
-        // Clear status - delete the record
-        await deleteDoc(doc(db, actionPath));
+        // CLEARING STATUS
+        await deleteDoc(actionRef);
         await deleteDoc(doc(db, userActionPath));
         
-        // Decrement if we were in Completed status
         if (oldStatus === 'Completed') {
-          await updateDoc(userRef, {
-            watchedCount: increment(-1)
-          });
+          await updateDoc(userRef, { watchedCount: increment(-1) });
         }
         
         if (oldStatus === 'Watching') {
-          // Check if we need to clear currentlyWatching
           const userDoc = await getDoc(userRef);
           if (userDoc.exists() && userDoc.data().currentlyWatching?.id === rec.id) {
             await updateDoc(userRef, { currentlyWatching: null });
@@ -88,6 +88,7 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
         return;
       }
 
+      // SETTING NEW STATUS
       const actionData = {
         userId: user.uid,
         userName: profile?.name || user.displayName || 'Anonymous',
@@ -96,23 +97,22 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
         createdAt: serverTimestamp(),
       };
 
-      // Write to both places
-      await setDoc(doc(db, actionPath), actionData, { merge: true });
+      await setDoc(actionRef, actionData, { merge: true });
       await setDoc(doc(db, userActionPath), actionData, { merge: true });
 
-      // Handle watchedCount transitions and currentlyWatching
+      // Update aggregate counts based on transition
       let userUpdates: any = {};
       
       if (newStatus === 'Completed' && oldStatus !== 'Completed') {
         userUpdates.watchedCount = increment(1);
-      } else if (newStatus !== 'Completed' && oldStatus === 'Completed') {
+      } else if (oldStatus === 'Completed' && newStatus !== 'Completed') {
         userUpdates.watchedCount = increment(-1);
       }
 
       if (newStatus === 'Watching') {
         userUpdates.currentlyWatching = { title: rec.title, id: rec.id };
       } else if (oldStatus === 'Watching') {
-        // Only clear if it was THIS movie being watched
+        // Check if we were watching THIS movie
         const userDoc = await getDoc(userRef);
         if (userDoc.exists() && userDoc.data().currentlyWatching?.id === rec.id) {
           userUpdates.currentlyWatching = null;
@@ -123,6 +123,7 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
         await updateDoc(userRef, userUpdates);
       }
     } catch (err) {
+      console.error('Status change error:', err);
       handleFirestoreError(err, OperationType.WRITE, actionPath);
     }
   };

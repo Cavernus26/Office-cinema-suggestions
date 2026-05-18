@@ -13,7 +13,7 @@ export const Leaderboard: React.FC = () => {
   useEffect(() => {
     if (!authUser) return;
 
-    const q = query(collection(db, 'users'), orderBy('recsCount', 'desc'), limit(12));
+    const q = query(collection(db, 'users'), orderBy('recsCount', 'desc'), limit(24));
     const unsub = onSnapshot(q, (snapshot) => {
       setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, (error) => {
