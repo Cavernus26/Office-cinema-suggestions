@@ -126,7 +126,16 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
       return;
     }
 
+    const debugPanel = {
+      currentUserUid: user.uid,
+      recommendationAuthorId: rec.authorId,
+      isSelfRating: user.uid === rec.authorId,
+      expectedToPass: user.uid !== rec.authorId
+    };
+    console.table(debugPanel);
+
     if (user.uid === rec.authorId) {
+      console.warn('DEBUG: Self-rating prevention triggered');
       alert("You cannot rate your own recommendation.");
       return;
     }
@@ -144,91 +153,134 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
     }
 
     try {
-      console.log('DEBUG: RATING_PROCESS_START', {
-        path: ratingRef.path,
-        operation: 'SET',
-        uid: user.uid,
-        payload: { rating, updatedAt: 'serverTimestamp' }
-      });
-
+      console.log('--- START RATING SUBMISSION ---');
+      
       // Step 1: Write the rating to the subcollection
       const timestamp = serverTimestamp();
       const ratingData = {
         userId: user.uid,
         userName: profile.name || "Anonymous",
         recommendationId: rec.id,
-        rating: Math.floor(rating), // Ensure integer
+        rating: Math.floor(rating),
         updatedAt: timestamp,
         createdAt: userRating?.createdAt || timestamp
       };
 
-      await setDoc(ratingRef, ratingData, { merge: true });
-      console.log('DEBUG: RATING_WRITE_SUCCESS', { path: ratingRef.path });
+      console.log('FIRESTORE_WRITE: Rating Document', {
+        operation: 'SET_DOC',
+        path: ratingRef.path,
+        uid: user.uid,
+        payload: ratingData
+      });
+
+      try {
+        await setDoc(ratingRef, ratingData, { merge: true });
+        console.log('SUCCESS: Rating write completed', { path: ratingRef.path });
+      } catch (writeErr: any) {
+        console.error('FAILURE: Rating write failed', {
+          path: ratingRef.path,
+          code: writeErr.code,
+          message: writeErr.message,
+          error: writeErr
+        });
+        throw writeErr;
+      }
 
       // Step 2: Fetch all ratings to calculate accurate aggregates
-      console.log('DEBUG: FETCHING_ALL_RATINGS', { path: ratingSubcollectionPath });
-      const ratingsSnap = await getDocs(collection(db, ratingSubcollectionPath));
-      const allRatings = ratingsSnap.docs.map(d => d.data().rating as number);
+      console.log('FIRESTORE_READ: Fetching all ratings for aggregate check', { path: ratingSubcollectionPath });
+      let allRatings: number[] = [];
+      try {
+        const ratingsSnap = await getDocs(collection(db, ratingSubcollectionPath));
+        allRatings = ratingsSnap.docs.map(d => d.data().rating as number);
+        console.log('SUCCESS: Fetched all ratings', { count: allRatings.length, ratings: allRatings });
+      } catch (fetchErr: any) {
+        console.error('FAILURE: Fetching ratings failed', {
+          path: ratingSubcollectionPath,
+          code: fetchErr.code,
+          message: fetchErr.message
+        });
+        throw fetchErr;
+      }
       
       const newCount = allRatings.length;
       const newSum = allRatings.reduce((a, b) => a + b, 0);
       const newAvg = newCount > 0 ? newSum / newCount : 0;
 
-      console.log('DEBUG: CALCULATED_AGGREGATES', { newCount, newAvg, newSum });
+      console.log('LOGIC: Aggregates calculated locally', { newCount, newAvg, newSum });
 
-      // Step 3: Update Recommendation aggregates (allowed by specific rule)
-      console.log('DEBUG: UPDATING_REC_AGGREGATES', {
+      // Step 3: Update Recommendation aggregates
+      console.log('FIRESTORE_WRITE: Recommendation doc aggregates', {
+        operation: 'UPDATE_DOC',
         path: recRef.path,
-        operation: 'UPDATE',
+        uid: user.uid,
         fields: ['averageRating', 'ratingCount'],
         payload: { averageRating: newAvg, ratingCount: newCount }
       });
       
-      await updateDoc(recRef, {
-        averageRating: newAvg,
-        ratingCount: newCount
-      });
-      console.log('DEBUG: REC_AGGREGATE_UPDATE_SUCCESS');
+      try {
+        await updateDoc(recRef, {
+          averageRating: newAvg,
+          ratingCount: newCount
+        });
+        console.log('SUCCESS: Recommendation aggregates updated', { path: recRef.path });
+      } catch (recUpdateErr: any) {
+        console.error('FAILURE: Recommendation aggregate update failed', {
+          path: recRef.path,
+          code: recUpdateErr.code,
+          message: recUpdateErr.message,
+          error: recUpdateErr
+        });
+        throw recUpdateErr;
+      }
 
-      // Step 4: Update Author profile aggregates (if exists and permitted)
+      // Step 4: Update Author profile aggregates
       if (authorRef) {
-        console.log('DEBUG: UPDATING_AUTHOR_AGGREGATES', { path: authorRef.path });
-        // Since we don't know the author's total across ALL recommendations easily without a full sweep,
-        // we normally use a delta, but for now we follow the "safe update" fields if allowed.
-        // However, the rule allows specific fields, so let's try a delta-based update since we have the old/new values.
+        console.log('FIRESTORE_WRITE: Author doc aggregates', {
+          operation: 'UPDATE_DOC',
+          path: authorRef.path,
+          uid: user.uid,
+          fields: ['totalRecommendationRatingSum', 'totalRecommendationRatingCount', 'avgRecommendationRating']
+        });
         
-        const authorDoc = await getDoc(authorRef);
-        if (authorDoc.exists()) {
-          const authorData = authorDoc.data();
-          const currentSum = Number(authorData.totalRecommendationRatingSum || 0);
-          const currentCount = Number(authorData.totalRecommendationRatingCount || 0);
-          
-          const updatedSum = currentSum - oldRating + rating;
-          const updatedCount = Math.max(1, currentCount + (oldRating === 0 ? 1 : 0));
-          const updatedAvg = updatedSum / updatedCount;
+        try {
+          const authorDoc = await getDoc(authorRef);
+          if (authorDoc.exists()) {
+            const authorData = authorDoc.data();
+            const currentSum = Number(authorData.totalRecommendationRatingSum || 0);
+            const currentCount = Number(authorData.totalRecommendationRatingCount || 0);
+            
+            const updatedSum = currentSum - oldRating + rating;
+            const updatedCount = Math.max(1, currentCount + (oldRating === 0 ? 1 : 0));
+            const updatedAvg = updatedSum / updatedCount;
 
-          await updateDoc(authorRef, {
-            totalRecommendationRatingSum: updatedSum,
-            totalRecommendationRatingCount: updatedCount,
-            avgRecommendationRating: updatedAvg
+            await updateDoc(authorRef, {
+              totalRecommendationRatingSum: updatedSum,
+              totalRecommendationRatingCount: updatedCount,
+              avgRecommendationRating: updatedAvg
+            });
+            console.log('SUCCESS: Author aggregates updated', { path: authorRef.path });
+          }
+        } catch (authorUpdateErr: any) {
+          console.warn('WARNING: Author aggregate update failed (possibly permitted but failed for other reasons)', {
+            path: authorRef.path,
+            code: authorUpdateErr.code,
+            message: authorUpdateErr.message
           });
-          console.log('DEBUG: AUTHOR_AGGREGATE_UPDATE_SUCCESS');
+          // Not throwing here to not bail the whole UI update if just the author stat fails
         }
       }
 
-      console.log('DEBUG: RATING_PROCESS_COMPLETE');
+      console.log('--- END RATING SUBMISSION: SUCCESS ---');
     } catch (err: any) {
-      console.error('DEBUG: RATING_PROCESS_FAILED', {
-        error: err.message,
-        code: err.code,
-        uid: user.uid,
-        recId: rec.id
+      console.error('--- END RATING SUBMISSION: FAILED ---', {
+        finalError: err.message,
+        finalCode: err.code
       });
       
-      if (err.message?.includes('permission') || err.code === 'permission-denied') {
-        console.error('DEBUG: PERMISSION_DENIED - Check firestore.rules for matching paths.');
+      if (err.code === 'permission-denied') {
+        console.error('PERMISSION DEBUG: Check rules vs payload. Are aggregate fields the only ones in the recommendation update?');
       } else {
-        alert(`Rating Error: ${err.message}`);
+        alert(`Rating failed: ${err.message}`);
       }
     } finally {
       setIsRating(null);

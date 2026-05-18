@@ -56,29 +56,23 @@ service cloud.firestore {
     }
 
     match /recommendations/{recId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(recId) && isValidRecommendation(incoming());
-      
-      // Allow updates:
-      // 1. Owners can update everything
-      // 2. Non-owners can ONLY update aggregate statistics (averageRating, ratingCount)
-      allow update: if isSignedIn() && (
-        isOwner(existing().authorId) || 
-        (incoming().diff(existing()).affectedKeys().hasOnly(['averageRating', 'ratingCount']))
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow delete: if request.auth != null && resource.data.authorId == request.auth.uid;
+      allow update: if request.auth != null && (
+        resource.data.authorId == request.auth.uid || 
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['averageRating', 'ratingCount'])
       );
-      
-      allow delete: if isSignedIn() && isOwner(existing().authorId);
 
-      // New ratings subcollection
       match /ratings/{userId} {
-        allow read: if isSignedIn();
-        // 1. Must be the user's own rating doc (ID == UID)
-        // 2. Must NOT be the author of the recommendation
-        // 3. Must be a valid rating shape
-        allow create, update: if isSignedIn() && userId == request.auth.uid 
+        allow read: if request.auth != null;
+        allow create, update, delete: if request.auth != null
+          && request.auth.uid == userId
           && get(/databases/$(database)/documents/recommendations/$(recId)).data.authorId != request.auth.uid
-          && isValidRating(incoming());
-        allow delete: if isOwner(userId);
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.rating is number
+          && request.resource.data.rating >= 1
+          && request.resource.data.rating <= 5;
       }
       
       // Keep existing actions for status (watching/watched)
