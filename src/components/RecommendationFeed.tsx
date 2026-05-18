@@ -24,6 +24,7 @@ export const RecommendationFeed: React.FC<RecommendationFeedProps> = ({ view = '
     type: 'all'
   });
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [attemptedPatches, setAttemptedPatches] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!user) return;
@@ -60,7 +61,7 @@ export const RecommendationFeed: React.FC<RecommendationFeedProps> = ({ view = '
   useEffect(() => {
     if (loading || recs.length === 0) return;
 
-    const itemsToPatch = recs.filter(r => !r.genres || r.genres.length === 0);
+    const itemsToPatch = recs.filter(r => (!r.genres || r.genres.length === 0) && !attemptedPatches.has(r.id));
     if (itemsToPatch.length === 0) return;
 
     const patchGenres = async () => {
@@ -68,6 +69,13 @@ export const RecommendationFeed: React.FC<RecommendationFeedProps> = ({ view = '
       const { tmdbService } = await import('../services/tmdb');
       const { doc, updateDoc } = await import('firebase/firestore');
       const { db } = await import('../lib/firebase');
+
+      // Update attempted patches immediately
+      setAttemptedPatches(prev => {
+        const next = new Set(prev);
+        itemsToPatch.forEach(item => next.add(item.id));
+        return next;
+      });
 
       for (const item of itemsToPatch) {
         try {
@@ -89,7 +97,7 @@ export const RecommendationFeed: React.FC<RecommendationFeedProps> = ({ view = '
     };
 
     patchGenres();
-  }, [recs.length, loading]);
+  }, [recs.length, loading, attemptedPatches]);
 
   const availableUsers = React.useMemo(() => {
     const userMap = new Map<string, string>();
@@ -121,10 +129,14 @@ export const RecommendationFeed: React.FC<RecommendationFeedProps> = ({ view = '
 
       // 3. Genre Filter
       const genreMatch = !filters.genre || (r.genres && r.genres.some(g => {
-        if (filters.genre === 'Sci-Fi') {
+        const selected = filters.genre;
+        if (selected === 'Sci-Fi' || selected === 'Science Fiction') {
           return g === 'Sci-Fi' || g === 'Science Fiction' || g === 'Sci-Fi & Fantasy';
         }
-        return g === filters.genre;
+        if (selected === 'Action' || selected === 'Action & Adventure') {
+          return g === 'Action' || g === 'Action & Adventure';
+        }
+        return g === selected;
       }));
       if (!genreMatch) return false;
 
