@@ -16,16 +16,26 @@ interface MovieCardProps {
 export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
   const { user, profile } = useAuth();
   const [actions, setActions] = useState<UserAction[]>([]);
+  const [ratings, setRatings] = useState<UserAction[]>([]);
   const [isHovered, setIsHovered] = useState(false);
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, `recommendations/${rec.id}/actions`), (snapshot) => {
+    const unsubActions = onSnapshot(collection(db, `recommendations/${rec.id}/actions`), (snapshot) => {
       setActions(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as UserAction)));
     });
-    return unsub;
+    
+    const unsubRatings = onSnapshot(collection(db, `recommendations/${rec.id}/ratings`), (snapshot) => {
+      setRatings(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as UserAction)));
+    });
+
+    return () => {
+      unsubActions();
+      unsubRatings();
+    };
   }, [rec.id]);
 
   const userAction = user ? actions.find(a => a.userId === user.uid) : null;
+  const userRating = user ? ratings.find(r => r.userId === user.uid) : null;
   const completedCount = actions.filter(a => a.status === 'Completed').length;
   const watchingCount = actions.filter(a => a.status === 'Watching').length;
 
@@ -115,94 +125,92 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
       alert("Please log in to rate recommendations.");
       return;
     }
+
+    if (user.uid === rec.authorId) {
+      alert("You cannot rate your own recommendation.");
+      return;
+    }
     
     setIsRating(rating);
-    const actionPath = `recommendations/${rec.id}/actions/${user.uid}`;
-    const userActionPath = `userActions/${user.uid}_${rec.id}`;
+    const ratingRef = doc(db, `recommendations/${rec.id}/ratings`, user.uid);
     const recRef = doc(db, 'recommendations', rec.id);
-    const authorId = rec.authorId;
-    const authorRef = authorId ? doc(db, 'users', authorId) : null;
+    const authorRef = rec.authorId ? doc(db, 'users', rec.authorId) : null;
     
-    const oldRating = userAction?.rating || 0;
+    const oldRating = userRating?.rating || 0;
     if (oldRating === rating) {
       setIsRating(null);
       return;
     }
 
     try {
-      console.log('DEBUG: Rating process started', { 
+      console.log('DEBUG: Starting rating transaction', { 
         recId: rec.id, 
-        userId: user.uid, 
         oldRating, 
         newRating: rating 
       });
-      
-      const timestamp = serverTimestamp();
-      const actionData: any = {
-        rating,
-        userId: user.uid,
-        userName: profile.name || "Anonymous",
-        recommendationId: rec.id,
-        updatedAt: timestamp
-      };
 
-      if (oldRating === 0) {
-        actionData.createdAt = timestamp;
-      }
+      await runTransaction(db, async (transaction) => {
+        // 1. Get freshest data
+        const recDoc = await transaction.get(recRef);
+        if (!recDoc.exists()) throw new Error("Recommendation doc missing");
 
-      // 1. Update individual choice records
-      console.log('DEBUG: Updating action docs...');
-      await setDoc(doc(db, actionPath), actionData, { merge: true });
-      await setDoc(doc(db, userActionPath), actionData, { merge: true });
+        let authorDoc = null;
+        if (authorRef) {
+          authorDoc = await transaction.get(authorRef);
+        }
 
-      // 2. Update Recommendation Stats
-      console.log('DEBUG: Updating recommendation doc...');
-      const recDoc = await getDoc(recRef);
-      if (recDoc.exists()) {
-        const data = recDoc.data();
-        const count = Number(data.ratingCount || 0);
-        const avg = Number(data.averageRating || 0);
+        const timestamp = serverTimestamp();
+        
+        // 2. Prepare Rating Data
+        const ratingData = {
+          userId: user.uid,
+          userName: profile.name || "Anonymous",
+          recommendationId: rec.id,
+          rating,
+          updatedAt: timestamp,
+          createdAt: userRating?.createdAt || timestamp
+        };
+
+        // 3. Write Rating
+        transaction.set(ratingRef, ratingData, { merge: true });
+
+        // 4. Update Recommendation Aggregates
+        const recData = recDoc.data();
+        const count = Number(recData.ratingCount || 0);
+        const avg = Number(recData.averageRating || 0);
         const sum = avg * count;
         
         const newCount = Math.max(1, count + (oldRating === 0 ? 1 : 0));
         const newSum = sum - oldRating + rating;
         const newAvg = newSum / newCount;
 
-        console.log('DEBUG: Stats calculated', { count, avg, newCount, newAvg });
-        
-        await setDoc(recRef, {
+        transaction.update(recRef, {
           averageRating: isFinite(newAvg) ? newAvg : rating,
           ratingCount: newCount
-        }, { merge: true });
-      }
+        });
 
-      // 3. Update Author Stats
-      if (authorRef) {
-        console.log('DEBUG: Updating author doc...');
-        const authorDoc = await getDoc(authorRef);
-        if (authorDoc.exists()) {
-          const data = authorDoc.data();
-          const sum = Number(data.totalRecommendationRatingSum || 0);
-          const count = Number(data.totalRecommendationRatingCount || 0);
+        // 5. Update Author Profile Aggregates
+        if (authorRef && authorDoc?.exists()) {
+          const authData = authorDoc.data();
+          const aSum = Number(authData.totalRecommendationRatingSum || 0);
+          const aCount = Number(authData.totalRecommendationRatingCount || 0);
           
-          const newCount = Math.max(1, count + (oldRating === 0 ? 1 : 0));
-          const newSum = sum - oldRating + rating;
-          const newAvg = newSum / newCount;
-          
-          await setDoc(authorRef, {
-            totalRecommendationRatingSum: newSum,
-            totalRecommendationRatingCount: newCount,
-            avgRecommendationRating: isFinite(newAvg) ? newAvg : rating
-          }, { merge: true });
+          const nextSum = aSum - oldRating + rating;
+          const nextCount = Math.max(1, aCount + (oldRating === 0 ? 1 : 0));
+          const nextAvg = nextSum / nextCount;
+
+          transaction.update(authorRef, {
+            totalRecommendationRatingSum: nextSum,
+            totalRecommendationRatingCount: nextCount,
+            avgRecommendationRating: isFinite(nextAvg) ? nextAvg : rating
+          });
         }
-      }
+      });
       
-      console.log('DEBUG: Rating process finished successfully');
+      console.log('DEBUG: Rating transaction completed');
     } catch (err: any) {
-      console.error('DEBUG: Rating process failed', err);
-      // We keep the log but remove the alert as requested by the user
-      // since the core functionality (rating persistence) appears to work correctly
-      if (err.code) console.error('Firebase Error Code:', err.code);
+      console.error('DEBUG: Rating transaction error', err);
+      handleFirestoreError(err, OperationType.WRITE, `recommendations/${rec.id}/ratings/${user.uid}`);
     } finally {
       setIsRating(null);
     }
@@ -434,7 +442,7 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
                     !isAuthor && !isRating && "hover:scale-125 cursor-pointer",
                     (isAuthor || isRating) && "cursor-default",
                     isAuthor && "opacity-30",
-                    (userAction?.rating || 0) >= star 
+                    (userRating?.rating || 0) >= star 
                       ? "text-yellow-400 drop-shadow-[0_0_12px_rgba(250,204,21,0.6)]" 
                       : "text-slate-300 hover:text-slate-100"
                   )}
@@ -453,7 +461,7 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
                     <Star 
                       className={cn(
                         "h-4 w-4", 
-                        (userAction?.rating || 0) >= star && "fill-current"
+                        (userRating?.rating || 0) >= star && "fill-current"
                       )} 
                     />
                   )}
@@ -467,27 +475,27 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
             ) : (
               <span className={cn(
                 "text-[9px] font-black uppercase tracking-[0.1em] whitespace-nowrap",
-                userAction?.rating ? "text-yellow-400" : "text-white"
+                userRating?.rating ? "text-yellow-400" : "text-white"
               )}>
-                {isRating ? 'Updating...' : (userAction?.rating ? `Your Rating: ${userAction.rating} / 5` : 'Rate this experience')}
+                {isRating ? 'Updating...' : (userRating?.rating ? `Your Rating: ${userRating.rating} / 5` : 'Rate this experience')}
               </span>
             )}
           </div>
         </div>
 
         {/* Individual Ratings Feed */}
-        {actions.filter(a => a.rating).length > 0 && (
+        {ratings.length > 0 && (
           <div className="mt-2 space-y-1">
             <p className="text-[7px] font-black text-slate-600 uppercase tracking-wider mb-2">Community Feedback</p>
             <div className="max-h-20 overflow-y-auto pr-1 custom-scrollbar">
-              {actions.filter(a => a.rating).sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0)).map((action) => (
-                <div key={action.id} className="flex items-center justify-between py-1 border-b border-white/5 last:border-0">
+              {ratings.sort((a,b) => (b.updatedAt?.seconds||0) - (a.updatedAt?.seconds||0)).map((r) => (
+                <div key={r.id} className="flex items-center justify-between py-1 border-b border-white/5 last:border-0">
                   <span className="text-[9px] font-bold text-slate-400 truncate max-w-[100px]">
-                    {action.userId === user?.uid ? 'You' : action.userName}
+                    {r.userId === user?.uid ? 'You' : r.userName}
                   </span>
                   <div className="flex items-center gap-0.5">
                     {Array.from({length: 5}).map((_, i) => (
-                      <Star key={i} className={cn("h-1.5 w-1.5", i < action.rating ? "text-yellow-500 fill-current" : "text-slate-800")} />
+                      <Star key={i} className={cn("h-1.5 w-1.5", i < (r.rating || 0) ? "text-yellow-500 fill-current" : "text-slate-800")} />
                     ))}
                   </div>
                 </div>

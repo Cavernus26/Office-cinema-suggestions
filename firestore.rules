@@ -1,9 +1,94 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Explicitly allow everything for now to bypass any hidden auth issues
+    // -------------------------------------------------------------------------
+    // HELPERS
+    // -------------------------------------------------------------------------
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    
+    function isValidId(id) { 
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+
+    // -------------------------------------------------------------------------
+    // VALIDATORS
+    // -------------------------------------------------------------------------
+    function isValidRecommendation(data) {
+      return data.keys().hasAll(['authorId', 'title', 'comment'])
+        && data.authorId == request.auth.uid
+        && data.title is string && data.title.size() <= 200
+        && data.comment is string && data.comment.size() <= 2000;
+    }
+
+    function isValidRating(data) {
+      return data.keys().hasAll(['userId', 'rating', 'recommendationId', 'updatedAt'])
+        && data.userId == request.auth.uid
+        && data.rating is int && data.rating >= 1 && data.rating <= 5
+        && data.recommendationId is string;
+    }
+
+    // -------------------------------------------------------------------------
+    // COLLECTIONS
+    // -------------------------------------------------------------------------
+
+    // Deny all by default
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      // Owners can update everything. 
+      // Non-owners can update ONLY the author's aggregate rating stats.
+      allow update: if isSignedIn() && (
+        isOwner(userId) || 
+        incoming().diff(existing()).affectedKeys().hasOnly(['avgRecommendationRating', 'totalRecommendationRatingSum', 'totalRecommendationRatingCount'])
+      );
+      allow create: if isOwner(userId);
+    }
+
+    match /usernames/{name} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    match /recommendations/{recId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(recId) && isValidRecommendation(incoming());
+      
+      // Allow updates:
+      // 1. Owners can update everything
+      // 2. Non-owners can ONLY update aggregate statistics (averageRating, ratingCount)
+      allow update: if isSignedIn() && (
+        isOwner(existing().authorId) || 
+        (incoming().diff(existing()).affectedKeys().hasOnly(['averageRating', 'ratingCount']))
+      );
+      
+      allow delete: if isSignedIn() && isOwner(existing().authorId);
+
+      // New ratings subcollection
+      match /ratings/{userId} {
+        allow read: if isSignedIn();
+        // 1. Must be the user's own rating doc (ID == UID)
+        // 2. Must NOT be the author of the recommendation
+        // 3. Must be a valid rating shape
+        allow create, update: if isSignedIn() && userId == request.auth.uid 
+          && get(/databases/$(database)/documents/recommendations/$(recId)).data.authorId != request.auth.uid
+          && isValidRating(incoming());
+        allow delete: if isOwner(userId);
+      }
+      
+      // Keep existing actions for status (watching/watched)
+      match /actions/{userId} {
+        allow read, write: if isSignedIn();
+      }
+    }
+
+    match /userActions/{actionId} {
+      allow read, write: if isSignedIn();
     }
   }
 }
