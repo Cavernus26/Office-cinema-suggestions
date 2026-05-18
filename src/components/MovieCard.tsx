@@ -111,7 +111,10 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
   const [isRating, setIsRating] = useState<number | null>(null);
 
   const handleRating = async (rating: number) => {
-    if (!user || !profile) return;
+    if (!user || !profile) {
+      alert("Please log in to rate recommendations.");
+      return;
+    }
     
     setIsRating(rating);
     const actionPath = `recommendations/${rec.id}/actions/${user.uid}`;
@@ -127,6 +130,8 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
     }
 
     try {
+      console.log('Starting rating transaction...', { rating, oldRating, recId: rec.id, authorId });
+      
       await runTransaction(db, async (transaction) => {
         const recDoc = await transaction.get(recRef);
         if (!recDoc.exists()) throw new Error("Recommendation does not exist!");
@@ -136,24 +141,27 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
           authorDoc = await transaction.get(authorRef);
         }
         
+        const timestamp = serverTimestamp();
         const actionData = { 
           rating,
           userId: user.uid,
           userName: profile.name,
           recommendationId: rec.id,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
+          updatedAt: timestamp
         };
 
         // Update Action records
-        transaction.set(doc(db, actionPath), actionData, { merge: true });
-        transaction.set(doc(db, userActionPath), actionData, { merge: true });
+        // Using set with merge for the specific user action documents
+        transaction.set(doc(db, actionPath), { ...actionData, createdAt: oldRating === 0 ? timestamp : (userAction?.createdAt || timestamp) }, { merge: true });
+        transaction.set(doc(db, userActionPath), { ...actionData, createdAt: oldRating === 0 ? timestamp : (userAction?.createdAt || timestamp) }, { merge: true });
 
         // Update Recommendation Stats
         const recData = recDoc.data();
-        const currentRecSum = (recData.averageRating || 0) * (recData.ratingCount || 0);
+        const currentRecCount = recData.ratingCount || 0;
+        const currentRecSum = (recData.averageRating || 0) * currentRecCount;
+        
+        const newRecRatingCount = currentRecCount + (oldRating === 0 ? 1 : 0);
         const newRecRatingSum = currentRecSum - oldRating + rating;
-        const newRecRatingCount = (recData.ratingCount || 0) + (oldRating === 0 ? 1 : 0);
         
         transaction.update(recRef, {
           averageRating: newRecRatingSum / newRecRatingCount,
@@ -176,13 +184,15 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
           });
         }
       });
+      
       console.log('Rating updated successfully:', rating);
     } catch (err: any) {
       console.error('Rating failed:', err);
-      // Attempt simpler update if transaction failed due to author doc issues
-      if (err.message?.includes('permission-denied')) {
-        alert("Permission denied. You can only rate other people's recommendations.");
+      const msg = err.message || JSON.stringify(err);
+      if (msg.includes('permission-denied')) {
+        alert("Permission denied. You can only rate other people's recommendations, and ensure you're logged in.");
       } else {
+        alert(`Rating failed: ${msg}`);
         handleFirestoreError(err, OperationType.WRITE, actionPath);
       }
     } finally {
@@ -418,7 +428,7 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
                     isAuthor && "opacity-30",
                     (userAction?.rating || 0) >= star 
                       ? "text-yellow-400 drop-shadow-[0_0_12px_rgba(250,204,21,0.6)]" 
-                      : "text-slate-400 hover:text-slate-300"
+                      : "text-slate-300 hover:text-slate-100"
                   )}
                   onClick={(e) => {
                     e.preventDefault();
@@ -445,11 +455,11 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
           </div>
           <div className="h-4 flex items-center px-2 overflow-hidden w-full justify-center">
             {profile?.name?.toLowerCase() === rec.authorName?.toLowerCase() ? (
-              <span className="text-[9px] font-black text-slate-300 uppercase tracking-[0.1em] whitespace-nowrap">Office Average Rating</span>
+              <span className="text-[9px] font-black text-slate-100 uppercase tracking-[0.1em] whitespace-nowrap">Office Average Rating</span>
             ) : (
               <span className={cn(
                 "text-[9px] font-black uppercase tracking-[0.1em] whitespace-nowrap",
-                userAction?.rating ? "text-yellow-400" : "text-slate-200"
+                userAction?.rating ? "text-yellow-400" : "text-white"
               )}>
                 {isRating ? 'Updating...' : (userAction?.rating ? `Your Rating: ${userAction.rating} / 5` : 'Rate this experience')}
               </span>
