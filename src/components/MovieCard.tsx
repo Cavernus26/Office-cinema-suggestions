@@ -108,9 +108,12 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
     }
   };
 
+  const [isRating, setIsRating] = useState<number | null>(null);
+
   const handleRating = async (rating: number) => {
     if (!user || !profile) return;
     
+    setIsRating(rating);
     const actionPath = `recommendations/${rec.id}/actions/${user.uid}`;
     const userActionPath = `userActions/${user.uid}_${rec.id}`;
     const recRef = doc(db, 'recommendations', rec.id);
@@ -118,12 +121,14 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
     const authorRef = authorId ? doc(db, 'users', authorId) : null;
     
     const oldRating = userAction?.rating || 0;
-    if (oldRating === rating) return;
+    if (oldRating === rating) {
+      setIsRating(null);
+      return;
+    }
 
     try {
       await runTransaction(db, async (transaction) => {
         const recDoc = await transaction.get(recRef);
-        
         if (!recDoc.exists()) throw new Error("Recommendation does not exist!");
 
         let authorDoc = null;
@@ -132,11 +137,12 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
         }
         
         const actionData = { 
-          rating, 
+          rating,
           userId: user.uid,
           userName: profile.name,
           recommendationId: rec.id,
-          createdAt: serverTimestamp() 
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
         };
 
         // Update Action records
@@ -145,9 +151,9 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
 
         // Update Recommendation Stats
         const recData = recDoc.data();
-        let currentRatingSum = (recData.averageRating || 0) * (recData.ratingCount || 0);
-        let newRecRatingSum = currentRatingSum - oldRating + rating;
-        let newRecRatingCount = (recData.ratingCount || 0) + (oldRating === 0 ? 1 : 0);
+        const currentRecSum = (recData.averageRating || 0) * (recData.ratingCount || 0);
+        const newRecRatingSum = currentRecSum - oldRating + rating;
+        const newRecRatingCount = (recData.ratingCount || 0) + (oldRating === 0 ? 1 : 0);
         
         transaction.update(recRef, {
           averageRating: newRecRatingSum / newRecRatingCount,
@@ -157,8 +163,12 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
         // Update Author Stats
         if (authorRef && authorDoc?.exists()) {
           const authorData = authorDoc.data();
-          let newAuthorSum = (authorData.totalRecommendationRatingSum || 0) - oldRating + rating;
-          let newAuthorCount = (authorData.totalRecommendationRatingCount || 0) + (oldRating === 0 ? 1 : 0);
+          const currentAuthorSum = (authorData.totalRecommendationRatingSum || 0);
+          const currentAuthorCount = (authorData.totalRecommendationRatingCount || 0);
+          
+          const newAuthorSum = currentAuthorSum - oldRating + rating;
+          const newAuthorCount = currentAuthorCount + (oldRating === 0 ? 1 : 0);
+          
           transaction.update(authorRef, {
             totalRecommendationRatingSum: newAuthorSum,
             totalRecommendationRatingCount: newAuthorCount,
@@ -166,8 +176,17 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
           });
         }
       });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, actionPath);
+      console.log('Rating updated successfully:', rating);
+    } catch (err: any) {
+      console.error('Rating failed:', err);
+      // Attempt simpler update if transaction failed due to author doc issues
+      if (err.message?.includes('permission-denied')) {
+        alert("Permission denied. You can only rate other people's recommendations.");
+      } else {
+        handleFirestoreError(err, OperationType.WRITE, actionPath);
+      }
+    } finally {
+      setIsRating(null);
     }
   };
 
@@ -385,30 +404,41 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
         <div className="mt-4 mb-2 flex flex-col items-center justify-center gap-1.5 py-2.5 rounded-2xl bg-slate-950/80 border border-white/10 ring-1 ring-inset ring-white/5 shadow-2xl">
           <div className="flex items-center gap-1.5">
             {[1, 2, 3, 4, 5].map((star) => {
-              const isAuthor = user?.uid === rec.authorId || profile?.name?.toLowerCase() === rec.authorName?.toLowerCase();
+              const isAuthor = user && rec.authorId ? user.uid === rec.authorId : (profile?.name && rec.authorName && profile.name.toLowerCase() === rec.authorName.toLowerCase());
+              const isRatingThis = isRating === star;
+              
               return (
                 <button
                   key={star}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (!isAuthor) handleRating(star);
-                  }}
+                  disabled={!!isRating}
                   className={cn(
                     "transition-all duration-300 transform active:scale-90",
-                    !isAuthor && "hover:scale-125 cursor-pointer",
-                    isAuthor && "cursor-default opacity-30",
+                    !isAuthor && !isRating && "hover:scale-125 cursor-pointer",
+                    (isAuthor || isRating) && "cursor-default",
+                    isAuthor && "opacity-30",
                     (userAction?.rating || 0) >= star 
                       ? "text-yellow-400 drop-shadow-[0_0_12px_rgba(250,204,21,0.6)]" 
                       : "text-slate-400 hover:text-slate-300"
                   )}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('Star clicked:', star, 'isAuthor:', isAuthor, 'recAuthorId:', rec.authorId, 'userUid:', user?.uid);
+                    if (!isAuthor && !isRating) {
+                      handleRating(star);
+                    }
+                  }}
                 >
-                  <Star 
-                    className={cn(
-                      "h-4 w-4", 
-                      (userAction?.rating || 0) >= star && "fill-current"
-                    )} 
-                  />
+                  {isRatingThis ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-yellow-400" />
+                  ) : (
+                    <Star 
+                      className={cn(
+                        "h-4 w-4", 
+                        (userAction?.rating || 0) >= star && "fill-current"
+                      )} 
+                    />
+                  )}
                 </button>
               );
             })}
@@ -421,7 +451,7 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
                 "text-[9px] font-black uppercase tracking-[0.1em] whitespace-nowrap",
                 userAction?.rating ? "text-yellow-400" : "text-slate-200"
               )}>
-                {userAction?.rating ? `Your Rating: ${userAction.rating} / 5` : 'Rate this experience'}
+                {isRating ? 'Updating...' : (userAction?.rating ? `Your Rating: ${userAction.rating} / 5` : 'Rate this experience')}
               </span>
             )}
           </div>
