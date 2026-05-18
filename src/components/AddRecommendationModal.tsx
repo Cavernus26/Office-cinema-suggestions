@@ -62,6 +62,7 @@ export const AddRecommendationModal: React.FC<AddModalProps> = ({ isOpen, onClos
         posterPath: selectedItem.poster_path,
         backdropPath: selectedItem.backdrop_path,
         year: (selectedItem.release_date || selectedItem.first_air_date || '').split('-')[0],
+        genres: selectedItem.genres?.map(g => g.name) || [],
         runtime: selectedItem.runtime || null,
         seasons: selectedItem.number_of_seasons || null,
         episodesCount: selectedItem.number_of_episodes || null,

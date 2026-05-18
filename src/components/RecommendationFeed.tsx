@@ -4,8 +4,10 @@ import { collection, query, orderBy, onSnapshot, where } from 'firebase/firestor
 import { Recommendation, UserAction } from '../types';
 import { MovieCard } from './MovieCard';
 import { motion, AnimatePresence } from 'motion/react';
-import { Loader2, Sparkles, Filter, Bookmark } from 'lucide-react';
+import { Loader2, Sparkles, Filter, Bookmark, SlidersHorizontal } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { FilterBar, FilterState } from './FilterBar';
+import { cn } from '../lib/utils';
 
 interface RecommendationFeedProps {
   view?: 'feed' | 'watchlist';
@@ -16,7 +18,12 @@ export const RecommendationFeed: React.FC<RecommendationFeedProps> = ({ view = '
   const [recs, setRecs] = useState<Recommendation[]>([]);
   const [userActions, setUserActions] = useState<UserAction[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'movie' | 'tv'>('all');
+  const [filters, setFilters] = useState<FilterState>({
+    userId: null,
+    genre: null,
+    type: 'all'
+  });
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -49,17 +56,47 @@ export const RecommendationFeed: React.FC<RecommendationFeedProps> = ({ view = '
     };
   }, [user?.uid, profile?.name]);
 
-  const filteredRecs = recs.filter(r => {
-    const typeMatch = filter === 'all' || r.type === filter;
-    if (!typeMatch) return false;
+  const availableUsers = React.useMemo(() => {
+    const userMap = new Map<string, string>();
+    recs.forEach(r => {
+      userMap.set(r.authorId, r.authorName);
+    });
+    return Array.from(userMap.entries()).map(([id, name]) => ({ id, name }));
+  }, [recs]);
 
-    if (view === 'watchlist') {
-      const action = userActions.find(a => a.recommendationId === r.id);
-      return action?.status === 'Plan to Watch';
-    }
+  const availableGenres = React.useMemo(() => {
+    const genreSet = new Set<string>();
+    recs.forEach(r => {
+      if (r.genres) {
+        r.genres.forEach(g => genreSet.add(g));
+      }
+    });
+    return Array.from(genreSet).sort();
+  }, [recs]);
 
-    return true;
-  });
+  const filteredRecs = React.useMemo(() => {
+    return recs.filter(r => {
+      // 1. Content Type Filter
+      const typeMatch = filters.type === 'all' || r.type === filters.type;
+      if (!typeMatch) return false;
+
+      // 2. User Filter
+      const userMatch = !filters.userId || r.authorId === filters.userId;
+      if (!userMatch) return false;
+
+      // 3. Genre Filter
+      const genreMatch = !filters.genre || (r.genres && r.genres.includes(filters.genre));
+      if (!genreMatch) return false;
+
+      // 4. View Specific Logic
+      if (view === 'watchlist') {
+        const action = userActions.find(a => a.recommendationId === r.id);
+        return action?.status === 'Plan to Watch';
+      }
+
+      return true;
+    });
+  }, [recs, filters, userActions, view]);
 
   if (loading) {
     return (
@@ -72,7 +109,7 @@ export const RecommendationFeed: React.FC<RecommendationFeedProps> = ({ view = '
 
   return (
     <div className="space-y-8">
-      {/* Header & Filters */}
+      {/* Header & Main Toggle */}
       <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-4xl font-black italic uppercase tracking-tight text-white">
@@ -83,20 +120,45 @@ export const RecommendationFeed: React.FC<RecommendationFeedProps> = ({ view = '
           </p>
         </div>
 
-        <div className="flex items-center gap-1 rounded-full bg-slate-900 p-1 border border-slate-800">
-          {(['all', 'movie', 'tv'] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setFilter(t)}
-              className={`rounded-full px-5 py-2 text-[10px] font-black uppercase tracking-widest transition-all ${
-                filter === t ? 'bg-yellow-400 text-slate-950 shadow-lg' : 'text-slate-500 hover:text-slate-100'
-              }`}
-            >
-              {t === 'all' ? 'All' : (t === 'movie' ? 'Movies' : 'TV Shows')}
-            </button>
-          ))}
-        </div>
+        <button
+          onClick={() => setIsFilterOpen(!isFilterOpen)}
+          className={cn(
+            "flex items-center gap-3 px-6 py-3 rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all border",
+            isFilterOpen 
+              ? "bg-yellow-400 text-slate-950 border-yellow-300 shadow-xl shadow-yellow-400/20" 
+              : "bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-100"
+          )}
+        >
+          <SlidersHorizontal className="h-4 w-4" />
+          Filters
+          {(filters.userId || filters.genre || filters.type !== 'all') && (
+            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-slate-950 text-[8px] text-yellow-400">
+              !
+            </span>
+          )}
+        </button>
       </div>
+
+      {/* Advanced Filter Bar */}
+      <AnimatePresence>
+        {isFilterOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="mb-8 p-6 rounded-3xl bg-slate-900/50 border border-slate-800/50 backdrop-blur-sm">
+              <FilterBar
+                filters={filters}
+                onFilterChange={setFilters}
+                availableUsers={availableUsers}
+                availableGenres={availableGenres}
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Grid */}
       {filteredRecs.length === 0 ? (

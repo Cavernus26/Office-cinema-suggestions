@@ -24,6 +24,7 @@ export interface Recommendation {
   posterPath: string;
   backdropPath?: string;
   year: string;
+  genres?: string[];
   runtime?: number;
   seasons?: number;
   episodesCount?: number;
