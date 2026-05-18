@@ -130,7 +130,12 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
     }
 
     try {
-      console.log('DEBUG: Rating individual updates start', { oldRating, newRating: rating });
+      console.log('DEBUG: Rating process started', { 
+        recId: rec.id, 
+        userId: user.uid, 
+        oldRating, 
+        newRating: rating 
+      });
       
       const timestamp = serverTimestamp();
       const actionData: any = {
@@ -145,70 +150,59 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
         actionData.createdAt = timestamp;
       }
 
-      // Step 1: Update Action Records
-      console.log('DEBUG: Updating action records...');
-      try {
-        await setDoc(doc(db, actionPath), actionData, { merge: true });
-        await setDoc(doc(db, userActionPath), actionData, { merge: true });
-      } catch (e: any) {
-        console.error('DEBUG: Failed to update action records', e);
-        throw new Error(`Action update failed: ${e.message}`);
+      // 1. Update individual choice records
+      console.log('DEBUG: Updating action docs...');
+      await setDoc(doc(db, actionPath), actionData, { merge: true });
+      await setDoc(doc(db, userActionPath), actionData, { merge: true });
+
+      // 2. Update Recommendation Stats
+      console.log('DEBUG: Updating recommendation doc...');
+      const recDoc = await getDoc(recRef);
+      if (recDoc.exists()) {
+        const data = recDoc.data();
+        const count = Number(data.ratingCount || 0);
+        const avg = Number(data.averageRating || 0);
+        const sum = avg * count;
+        
+        const newCount = Math.max(1, count + (oldRating === 0 ? 1 : 0));
+        const newSum = sum - oldRating + rating;
+        const newAvg = newSum / newCount;
+
+        console.log('DEBUG: Stats calculated', { count, avg, newCount, newAvg });
+        
+        await setDoc(recRef, {
+          averageRating: isFinite(newAvg) ? newAvg : rating,
+          ratingCount: newCount
+        }, { merge: true });
       }
 
-      // Step 2: Update Recommendation Stats
-      console.log('DEBUG: Updating recommendation stats...');
-      try {
-        const recDoc = await getDoc(recRef);
-        if (recDoc.exists()) {
-          const recData = recDoc.data();
-          const rCount = recData.ratingCount || 0;
-          const rAvg = recData.averageRating || 0;
-          const rSum = rAvg * rCount;
-          
-          const newRCount = Math.max(1, rCount + (oldRating === 0 ? 1 : 0));
-          const newRSum = rSum - oldRating + rating;
-          const newRAvg = newRSum / newRCount;
-          
-          await updateDoc(recRef, {
-            averageRating: isFinite(newRAvg) ? newRAvg : rating,
-            ratingCount: newRCount
-          });
-        }
-      } catch (e: any) {
-        console.error('DEBUG: Failed to update recommendation stats', e);
-        throw new Error(`Recommendation stats update failed: ${e.message}`);
-      }
-
-      // Step 3: Update Author Stats
+      // 3. Update Author Stats
       if (authorRef) {
-        console.log('DEBUG: Updating author stats...');
-        try {
-          const authorDoc = await getDoc(authorRef);
-          if (authorDoc.exists()) {
-            const authorData = authorDoc.data();
-            const aSum = authorData.totalRecommendationRatingSum || 0;
-            const aCount = authorData.totalRecommendationRatingCount || 0;
-            
-            const newACount = Math.max(1, aCount + (oldRating === 0 ? 1 : 0));
-            const newASum = aSum - oldRating + rating;
-            const newAAvg = newASum / newACount;
-            
-            await updateDoc(authorRef, {
-              totalRecommendationRatingSum: newASum,
-              totalRecommendationRatingCount: newACount,
-              avgRecommendationRating: isFinite(newAAvg) ? newAAvg : rating
-            });
-          }
-        } catch (e: any) {
-          console.warn('DEBUG: Author stats update failed - possibly non-existent profile', e);
+        console.log('DEBUG: Updating author doc...');
+        const authorDoc = await getDoc(authorRef);
+        if (authorDoc.exists()) {
+          const data = authorDoc.data();
+          const sum = Number(data.totalRecommendationRatingSum || 0);
+          const count = Number(data.totalRecommendationRatingCount || 0);
+          
+          const newCount = Math.max(1, count + (oldRating === 0 ? 1 : 0));
+          const newSum = sum - oldRating + rating;
+          const newAvg = newSum / newCount;
+          
+          await setDoc(authorRef, {
+            totalRecommendationRatingSum: newSum,
+            totalRecommendationRatingCount: newCount,
+            avgRecommendationRating: isFinite(newAvg) ? newAvg : rating
+          }, { merge: true });
         }
       }
       
-      console.log('DEBUG: Rating individual updates success');
+      console.log('DEBUG: Rating process finished successfully');
     } catch (err: any) {
-      console.error('DEBUG: Rating handleRating error', err);
+      console.error('DEBUG: Rating process failed', err);
       const msg = err.message || String(err);
-      alert(`Rating Error: ${msg}`);
+      alert(`Update failed: ${msg}`);
+      if (err.code) console.error('Firebase Error Code:', err.code);
     } finally {
       setIsRating(null);
     }
