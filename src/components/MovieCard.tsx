@@ -200,8 +200,8 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
       console.log('DEBUG: Rating process finished successfully');
     } catch (err: any) {
       console.error('DEBUG: Rating process failed', err);
-      const msg = err.message || String(err);
-      alert(`Update failed: ${msg}`);
+      // We keep the log but remove the alert as requested by the user
+      // since the core functionality (rating persistence) appears to work correctly
       if (err.code) console.error('Firebase Error Code:', err.code);
     } finally {
       setIsRating(null);
