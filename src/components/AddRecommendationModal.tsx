@@ -220,8 +220,8 @@ export const AddRecommendationModal: React.FC<AddModalProps> = ({ isOpen, onClos
                 </div>
 
                 {/* Comment Input */}
-                <div className="space-y-3">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Why watch it?</label>
+                <div className="space-y-5">
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 pl-1">Why watch it?</label>
                   <textarea
                     required
                     rows={4}
