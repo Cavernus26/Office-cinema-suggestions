@@ -3,8 +3,9 @@ import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth'
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 
 // In AI Studio, the config is provided in the root.
-// We use a try-catch or a safer import if possible, but for simplicity in this environment:
-import localConfig from '../../firebase-applet-config.json';
+// We use import.meta.glob to safely handle the optional config file without breaking the build.
+const configFiles = import.meta.glob('../../firebase-applet-config.json', { eager: true });
+const localConfig = (configFiles['../../firebase-applet-config.json'] as any)?.default || {};
 
 /**
  * Firebase Config Strategy:

@@ -7,6 +7,7 @@ import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { doc, getDocs, getDoc, collection, deleteDoc, updateDoc, setDoc, query, where, onSnapshot, serverTimestamp, runTransaction } from 'firebase/firestore';
 import { cn } from '../lib/utils';
 import { useAuth } from '../contexts/AuthContext';
+import { getRandomAvatar } from '../lib/avatars';
 
 interface MovieCardProps {
   rec: Recommendation;
@@ -44,6 +45,8 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
   const userRating = user ? ratings.find(r => r.userId === user.uid) : null;
   const completedCount = actions.filter(a => a.status === 'Completed').length;
   const watchingCount = actions.filter(a => a.status === 'Watching').length;
+
+  const authorAvatar = rec.authorAvatar || (rec.authorId ? getRandomAvatar(rec.authorId) : `https://api.dicebear.com/7.x/avataaars/svg?seed=${rec.authorName}`);
 
   // Calculate dynamic aggregates from real-time rating documents
   const dynamicRatingCount = ratings.length;
@@ -496,7 +499,7 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
         <div className="mt-auto pt-3 flex items-center justify-between border-t border-slate-800/50">
           <div className="flex items-center -space-x-2">
              <img 
-               src={rec.authorAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${rec.authorName}`}
+               src={authorAvatar}
                alt={rec.authorName}
                className="w-6 h-6 rounded-full bg-slate-800 border border-slate-700 object-cover"
              />
