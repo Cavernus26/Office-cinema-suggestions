@@ -22,7 +22,7 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isSignedIn();
       allow create: if isOwner(userId);
-      allow update: if isOwner(userId) || (isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['totalRecommendationRatingSum', 'totalRecommendationRatingCount', 'avgRecommendationRating', 'watchedCount', 'recsCount', 'currentlyWatching']));
+      allow update: if isSignedIn();
       allow delete: if isOwner(userId);
     }
 
@@ -38,10 +38,7 @@ service cloud.firestore {
     match /recommendations/{recId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
-      allow update: if isSignedIn() && (
-        existing().authorId == request.auth.uid || 
-        incoming().diff(existing()).affectedKeys().hasOnly(['reactionsCount', 'averageRating', 'ratingCount'])
-      );
+      allow update: if isSignedIn();
       allow delete: if existing().authorId == request.auth.uid;
 
       match /actions/{actionId} {
