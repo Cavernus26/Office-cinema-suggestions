@@ -215,7 +215,9 @@ export const AddRecommendationModal: React.FC<AddModalProps> = ({ isOpen, onClos
                         <span className="text-[10px] font-black text-yellow-400 uppercase tracking-widest">{selectedItem.vote_average.toFixed(1)} TMDB Score</span>
                       </div>
                     )}
-                    <p className="line-clamp-2 text-xs text-slate-400 mt-2 italic leading-relaxed">{selectedItem.overview}</p>
+                    <div className="max-h-20 overflow-y-auto mt-2 pr-2 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+                      <p className="text-xs text-slate-400 italic leading-relaxed">{selectedItem.overview}</p>
+                    </div>
                   </div>
                 </div>
 
