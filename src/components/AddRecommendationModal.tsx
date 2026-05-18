@@ -3,7 +3,7 @@ import { tmdbService, TMDBResult } from '../services/tmdb';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, X, Loader2, Send, Star } from 'lucide-react';
 import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
-import { collection, addDoc, serverTimestamp, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, getDoc, updateDoc, increment } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { getRandomAvatar } from '../lib/avatars';
 
@@ -77,12 +77,12 @@ export const AddRecommendationModal: React.FC<AddModalProps> = ({ isOpen, onClos
       // Increment user's rec count
       if (auth.currentUser) {
         const userRef = doc(db, 'users', auth.currentUser.uid);
-        const userDoc = await getDoc(userRef).catch(err => handleFirestoreError(err, OperationType.GET, `users/${auth.currentUser?.uid}`));
-        if (userDoc && userDoc.exists()) {
-          await updateDoc(userRef, {
-            recsCount: (userDoc.data().recsCount || 0) + 1
-          }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `users/${auth.currentUser?.uid}`));
-        }
+        await updateDoc(userRef, {
+          recsCount: increment(1)
+        }).catch(err => {
+          console.warn('Failed to increment recsCount:', err);
+          handleFirestoreError(err, OperationType.UPDATE, `users/${auth.currentUser?.uid}`);
+        });
       }
 
       onClose();

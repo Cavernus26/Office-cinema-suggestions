@@ -4,7 +4,7 @@ import { tmdbService } from '../services/tmdb';
 import { motion, AnimatePresence } from 'motion/react';
 import { Play, CheckCircle, Clock, Trash2, Heart, BookmarkPlus, BookmarkCheck, Loader2, Star } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { doc, getDocs, getDoc, collection, deleteDoc, updateDoc, setDoc, query, where, onSnapshot, serverTimestamp, runTransaction } from 'firebase/firestore';
+import { doc, getDocs, getDoc, collection, deleteDoc, updateDoc, setDoc, query, where, onSnapshot, serverTimestamp, runTransaction, increment } from 'firebase/firestore';
 import { cn } from '../lib/utils';
 import { useAuth } from '../contexts/AuthContext';
 import { getRandomAvatar } from '../lib/avatars';
@@ -64,28 +64,25 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
     if (oldStatus === newStatus) return; // No change
 
     try {
+      const userRef = doc(db, 'users', user.uid);
+
       if (!newStatus) {
         // Clear status - delete the record
         await deleteDoc(doc(db, actionPath));
         await deleteDoc(doc(db, userActionPath));
         
         // Decrement if we were in Completed status
-        const userRef = doc(db, 'users', user.uid);
-        const userDoc = await getDoc(userRef);
-        if (userDoc.exists()) {
-          const userData = userDoc.data();
-          let updates: any = {};
-          
-          if (oldStatus === 'Completed') {
-            updates.watchedCount = Math.max(0, (userData.watchedCount || 0) - 1);
-          }
-          
-          if (oldStatus === 'Watching' && userData.currentlyWatching?.id === rec.id) {
-            updates.currentlyWatching = null;
-          }
-          
-          if (Object.keys(updates).length > 0) {
-            await updateDoc(userRef, updates);
+        if (oldStatus === 'Completed') {
+          await updateDoc(userRef, {
+            watchedCount: increment(-1)
+          });
+        }
+        
+        if (oldStatus === 'Watching') {
+          // Check if we need to clear currentlyWatching
+          const userDoc = await getDoc(userRef);
+          if (userDoc.exists() && userDoc.data().currentlyWatching?.id === rec.id) {
+            await updateDoc(userRef, { currentlyWatching: null });
           }
         }
         return;
@@ -103,29 +100,27 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
       await setDoc(doc(db, actionPath), actionData, { merge: true });
       await setDoc(doc(db, userActionPath), actionData, { merge: true });
 
-      // Handle watchedCount transitions
-      const userRef = doc(db, 'users', user.uid);
-      const userDoc = await getDoc(userRef);
+      // Handle watchedCount transitions and currentlyWatching
+      let userUpdates: any = {};
       
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
-        let updates: any = {};
-        
-        if (newStatus === 'Completed' && oldStatus !== 'Completed') {
-          updates.watchedCount = (userData.watchedCount || 0) + 1;
-        } else if (newStatus !== 'Completed' && oldStatus === 'Completed') {
-          updates.watchedCount = Math.max(0, (userData.watchedCount || 0) - 1);
-        }
+      if (newStatus === 'Completed' && oldStatus !== 'Completed') {
+        userUpdates.watchedCount = increment(1);
+      } else if (newStatus !== 'Completed' && oldStatus === 'Completed') {
+        userUpdates.watchedCount = increment(-1);
+      }
 
-        if (newStatus === 'Watching') {
-          updates.currentlyWatching = { title: rec.title, id: rec.id };
-        } else if (oldStatus === 'Watching' && userData.currentlyWatching?.id === rec.id) {
-          updates.currentlyWatching = null;
+      if (newStatus === 'Watching') {
+        userUpdates.currentlyWatching = { title: rec.title, id: rec.id };
+      } else if (oldStatus === 'Watching') {
+        // Only clear if it was THIS movie being watched
+        const userDoc = await getDoc(userRef);
+        if (userDoc.exists() && userDoc.data().currentlyWatching?.id === rec.id) {
+          userUpdates.currentlyWatching = null;
         }
+      }
 
-        if (Object.keys(updates).length > 0) {
-          await updateDoc(userRef, updates);
-        }
+      if (Object.keys(userUpdates).length > 0) {
+        await updateDoc(userRef, userUpdates);
       }
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, actionPath);
