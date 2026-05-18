@@ -38,73 +38,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Initialize or fetch user document
-  const ensureUserDoc = async (authUser: User, name?: string, passcode?: string) => {
-    const userRef = doc(db, 'users', authUser.uid);
-    const userDoc = await getDoc(userRef);
-    
-    if (!userDoc.exists()) {
-      const initialProfile = {
-        name: name || authUser.displayName || 'Circle Member',
-        passcode: passcode || null,
-        avatar: authUser.photoURL || getRandomAvatar(authUser.uid),
-        watchedCount: 0,
-        recsCount: 0,
-        avgRating: 0,
-        uid: authUser.uid,
-        isAnonymous: authUser.isAnonymous,
-        email: authUser.email,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      };
-      await setDoc(userRef, initialProfile);
-      return initialProfile;
-    } else {
-      // Update existing doc with latest auth info if needed
-      const data = userDoc.data();
-      const updates: any = { 
-        updatedAt: serverTimestamp(),
-        isAnonymous: authUser.isAnonymous
-      };
-      
-      let hasChanges = false;
-      if (authUser.email && data.email !== authUser.email) {
-        updates.email = authUser.email;
-        hasChanges = true;
-      }
-      if (authUser.photoURL && !data.avatar) {
-        updates.avatar = authUser.photoURL;
-        hasChanges = true;
-      }
-      if (name && data.name !== name) {
-        updates.name = name;
-        hasChanges = true;
-      }
-
-      if (hasChanges) {
-        await updateDoc(userRef, updates);
-        return { ...data, ...updates };
-      }
-      return data;
-    }
-  };
-
   useEffect(() => {
     let unsubscribeProfile: (() => void) | undefined;
 
-    const unsubscribeAuth = onAuthStateChanged(auth, async (authUser) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (authUser) => {
       setUser(authUser);
       
       if (authUser) {
-        // Automatically ensure user doc exists for returning users
+        // Automatically fetch user doc for returning users
         const userRef = doc(db, 'users', authUser.uid);
         
-        unsubscribeProfile = onSnapshot(userRef, async (docSnap) => {
+        unsubscribeProfile = onSnapshot(userRef, (docSnap) => {
           if (docSnap.exists()) {
             setProfile(docSnap.data());
           } else {
-            // If the listener finds no doc, create it with current auth info
-            await ensureUserDoc(authUser);
+            // If the profile document is missing, we don't automatically recreate it here.
+            // This prevents "Circle Member" auto-login if the doc was deleted.
+            // We set profile to null, which will trigger the Login screen in App.tsx
+            setProfile(null);
+            auth.signOut();
           }
         });
       } else {
