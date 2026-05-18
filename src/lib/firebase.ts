@@ -2,56 +2,40 @@ import { initializeApp, getApp, getApps } from 'firebase/app';
 import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 
-// Firebase configuration using environment variables for maximum compatibility.
-// When deploying to Vercel or other platforms, you must set these variables in your project settings.
-// Variables MUST be prefixed with VITE_ to be accessible in the browser.
-
-// Safe check for local config (ignored by git) to support local preview without leaking keys.
-const configFiles = import.meta.glob('../../firebase-applet-config.json', { eager: true });
-const localConfig = (configFiles['../../firebase-applet-config.json'] as any)?.default;
+// In AI Studio, the config is provided in the root.
+// We use a try-catch or a safer import if possible, but for simplicity in this environment:
+import localConfig from '../../firebase-applet-config.json';
 
 /**
  * Firebase Config Strategy:
- * 1. Try VITE_ prefixed environment variables (best for Vercel/CI).
- * 2. Fallback to localConfig (only exists in AI Studio / Local Dev).
+ * 1. Use VITE_ environment variables if available (for production/Vercel).
+ * 2. Fallback to the local config file (for AI Studio/local dev).
  */
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || localConfig?.apiKey,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || localConfig?.authDomain,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || localConfig?.projectId,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || localConfig?.storageBucket,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || localConfig?.messagingSenderId,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || localConfig?.appId,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || localConfig?.measurementId,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || localConfig.apiKey,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || localConfig.authDomain,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || localConfig.projectId,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || localConfig.storageBucket,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || localConfig.messagingSenderId,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || localConfig.appId,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || localConfig.measurementId,
 };
 
-const databaseId = import.meta.env.VITE_FIREBASE_DATABASE_ID || localConfig?.firestoreDatabaseId || "(default)";
+const databaseId = import.meta.env.VITE_FIREBASE_DATABASE_ID || localConfig.firestoreDatabaseId || "(default)";
 
-if (import.meta.env.PROD) {
-  console.log("DEBUG - Database ID:", databaseId);
-}
-
-// Validation helper for production
 const isConfigValid = !!(firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.apiKey !== "missing");
 
-if (!isConfigValid && import.meta.env.PROD) {
-  console.error("DEBUG - Current Config:", {
-    hasApiKey: !!firebaseConfig.apiKey,
-    hasProjectId: !!firebaseConfig.projectId,
-    apiKeyStart: firebaseConfig.apiKey?.substring(0, 5) + "..."
+if (import.meta.env.DEV) {
+  console.log("Firebase Init:", {
+    projectId: firebaseConfig.projectId,
+    databaseId,
+    isValid: isConfigValid
   });
 }
 
-// Only initialize if we have at least an API key to avoid immediate crash during build or boot
 const app = (getApps().length === 0) 
-  ? (isConfigValid 
-      ? initializeApp(firebaseConfig) 
-      : initializeApp({ apiKey: "missing", authDomain: "missing", projectId: "missing" }, "placeholder"))
+  ? initializeApp(firebaseConfig)
   : getApp();
-
-if (!isConfigValid && import.meta.env.PROD) {
-  console.error("CRITICAL: Firebase configuration is missing in production! You must set VITE_FIREBASE_API_KEY and other environment variables in Vercel.");
-}
 
 export const db = getFirestore(app, databaseId);
 export const auth = getAuth(app);

@@ -33,6 +33,7 @@ export interface Recommendation {
   comment: string;
   authorId: string;
   authorName: string;
+  authorAvatar?: string;
   createdAt: any;
   reactionsCount?: number;
 }

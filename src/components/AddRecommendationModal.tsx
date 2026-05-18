@@ -5,6 +5,7 @@ import { Search, X, Loader2, Send, Star } from 'lucide-react';
 import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, addDoc, serverTimestamp, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
+import { getRandomAvatar } from '../lib/avatars';
 
 interface AddModalProps {
   isOpen: boolean;
@@ -68,6 +69,7 @@ export const AddRecommendationModal: React.FC<AddModalProps> = ({ isOpen, onClos
         comment,
         authorId: auth.currentUser.uid,
         authorName: profile.name,
+        authorAvatar: profile.avatar || getRandomAvatar(auth.currentUser.uid),
         createdAt: serverTimestamp(),
       };
       await addDoc(collection(db, 'recommendations'), recData).catch(err => handleFirestoreError(err, OperationType.CREATE, 'recommendations'));

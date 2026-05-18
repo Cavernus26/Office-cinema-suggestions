@@ -21,6 +21,8 @@ import {
 } from 'firebase/firestore';
 import { handleFirestoreError, OperationType } from '../lib/firebase';
 
+import { getRandomAvatar } from '../lib/avatars';
+
 interface AuthContextType {
   user: User | null;
   profile: any | null;
@@ -45,7 +47,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const initialProfile = {
         name: name || authUser.displayName || 'Circle Member',
         passcode: passcode || null,
-        avatar: authUser.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${authUser.uid}`,
+        avatar: authUser.photoURL || getRandomAvatar(authUser.uid),
         watchedCount: 0,
         recsCount: 0,
         avgRating: 0,
@@ -152,7 +154,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const profileData = {
           name: cleanedName,
           passcode,
-          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${newUser.uid}`,
+          avatar: getRandomAvatar(newUser.uid),
           watchedCount: 0,
           recsCount: 0,
           avgRating: 0,

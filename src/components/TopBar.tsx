@@ -6,6 +6,8 @@ import { cn } from '../lib/utils';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
+import { AVATAR_OPTIONS } from '../lib/avatars';
+
 export const TopBar: React.FC<{ onOpenAdd: () => void }> = ({ onOpenAdd }) => {
   const { profile, logout, user } = useAuth();
   const [showMenu, setShowMenu] = useState(false);
@@ -19,15 +21,6 @@ export const TopBar: React.FC<{ onOpenAdd: () => void }> = ({ onOpenAdd }) => {
       console.error(err);
     }
   };
-
-  const AVATAR_OPTIONS = [
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=Felix',
-    'https://api.dicebear.com/7.x/bottts/svg?seed=Coco',
-    'https://api.dicebear.com/7.x/pixel-art/svg?seed=Mario',
-    'https://api.dicebear.com/7.x/lorelei/svg?seed=Alice',
-    'https://api.dicebear.com/7.x/notionists/svg?seed=Bob',
-    'https://api.dicebear.com/7.x/fun-emoji/svg?seed=Sparkle',
-  ];
 
   return (
     <header className="h-24 border-b border-slate-800 px-8 flex items-center justify-between bg-slate-950/50 backdrop-blur-md sticky top-0 z-40">

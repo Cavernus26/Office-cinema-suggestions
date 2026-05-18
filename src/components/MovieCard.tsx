@@ -397,11 +397,13 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
         <h3 className="line-clamp-1 text-sm font-black uppercase tracking-wider leading-tight text-white transition-colors group-hover:text-yellow-400">
           {rec.title}
         </h3>
-        <div className="mt-3 flex items-start justify-between gap-3 min-h-[4.5rem]">
-          <p className="line-clamp-3 text-[11px] italic text-slate-400 group-hover:text-slate-300 transition-colors leading-relaxed grow">
-            "{rec.comment}"
-          </p>
-          {(dynamicRatingCount > 0) && (
+          <div className="mt-3 flex items-start justify-between gap-3 h-[4.5rem]">
+            <div className="overflow-y-auto grow h-full pr-1 custom-scrollbar">
+              <p className="text-[11px] italic text-slate-400 group-hover:text-slate-300 transition-colors leading-relaxed">
+                "{rec.comment}"
+              </p>
+            </div>
+            {(dynamicRatingCount > 0) && (
             <div className="flex flex-col items-end gap-1 shrink-0">
               <div className="flex items-center gap-1 rounded-xl bg-yellow-400/10 px-2.5 py-1.5 border border-yellow-400/20 shadow-inner">
                 <Star className="h-3 w-3 text-yellow-400 fill-current" />
@@ -494,9 +496,9 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
         <div className="mt-auto pt-3 flex items-center justify-between border-t border-slate-800/50">
           <div className="flex items-center -space-x-2">
              <img 
-               src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${rec.authorName}`}
+               src={rec.authorAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${rec.authorName}`}
                alt={rec.authorName}
-               className="w-6 h-6 rounded-full bg-slate-800 border border-slate-700"
+               className="w-6 h-6 rounded-full bg-slate-800 border border-slate-700 object-cover"
              />
           </div>
           
