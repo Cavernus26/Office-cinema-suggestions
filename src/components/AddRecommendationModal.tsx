@@ -115,7 +115,7 @@ export const AddRecommendationModal: React.FC<AddModalProps> = ({ isOpen, onClos
         className="relative w-full max-w-lg overflow-hidden rounded-[2.5rem] bg-slate-900 border border-slate-800 shadow-2xl"
       >
         <div className="flex items-center justify-between border-b border-slate-800 p-8">
-          <h2 className="text-2xl font-black uppercase italic tracking-tight text-white">Share a Movie</h2>
+          <h2 className="text-2xl font-black uppercase italic tracking-tight text-white">Share a Movie or TV Show</h2>
           <button onClick={onClose} className="rounded-full p-2 text-slate-500 hover:bg-slate-800 transition-colors">
             <X className="h-6 w-6" />
           </button>
