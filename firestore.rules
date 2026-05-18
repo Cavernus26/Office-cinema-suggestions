@@ -20,41 +20,28 @@ service cloud.firestore {
     // -------------------------------------------------------------------------
 
     match /users/{userId} {
-      allow read: if isSignedIn();
-      allow create: if isOwner(userId);
-      allow update: if isSignedIn();
-      allow delete: if isOwner(userId);
+      allow read, write: if isSignedIn();
     }
 
     match /usernames/{name} {
+      allow read, write: if isSignedIn();
       allow get: if true;
-      allow create: if isSignedIn() && incoming().ownerId == request.auth.uid;
-      allow update: if isSignedIn() && (
-        existing().ownerId == request.auth.uid || 
-        (incoming().passcode == existing().passcode && incoming().ownerId == request.auth.uid)
-      );
     }
 
     match /recommendations/{recId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
-      allow delete: if existing().authorId == request.auth.uid;
+      allow read, write: if isSignedIn();
 
       match /actions/{actionId} {
-        allow read: if isSignedIn();
-        allow create, update, delete: if isSignedIn();
+        allow read, write: if isSignedIn();
       }
 
       match /reactions/{reactionId} {
-        allow read: if isSignedIn();
-        allow create, delete: if isSignedIn();
+        allow read, write: if isSignedIn();
       }
     }
 
     match /userActions/{actionId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
+      allow read, write: if isSignedIn();
     }
   }
 }
