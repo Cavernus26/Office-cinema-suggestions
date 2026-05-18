@@ -19,6 +19,7 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
   const [actions, setActions] = useState<UserAction[]>([]);
   const [ratings, setRatings] = useState<UserAction[]>([]);
   const [isHovered, setIsHovered] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -54,10 +55,13 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
   const dynamicAvgRating = dynamicRatingCount > 0 ? dynamicRatingSum / dynamicRatingCount : 0;
 
   const handleStatusChange = async (newStatus: WatchStatus | null) => {
-    if (!user || !profile) return;
+    if (!user || !profile || isProcessing) return;
+    
     const actionId = `${user.uid}_${rec.id}`;
     const actionPath = `recommendations/${rec.id}/actions/${user.uid}`;
     const userActionPath = `userActions/${actionId}`;
+    
+    setIsProcessing(true);
     
     // 1. Get current status directly from Firestore to ensure aggregate counts are accurate
     // avoiding race conditions with local state
@@ -134,6 +138,8 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
     } catch (err) {
       console.error('Status change error:', err);
       handleFirestoreError(err, OperationType.WRITE, actionPath);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -364,35 +370,41 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
               <div className="flex flex-col gap-1.5 sm:flex-row sm:gap-1.5">
                 <button
                   onClick={() => handleStatusChange(userAction?.status === 'Watching' ? null : 'Watching')}
+                  disabled={isProcessing}
                   className={cn(
                     "flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2.5 text-[9px] font-black uppercase transition-all",
-                    userAction?.status === 'Watching' ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/20" : "bg-slate-800/90 text-white backdrop-blur-md hover:bg-slate-700"
+                    userAction?.status === 'Watching' ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/20" : "bg-slate-800/90 text-white backdrop-blur-md hover:bg-slate-700",
+                    isProcessing && "opacity-50 cursor-not-allowed"
                   )}
                 >
-                  <Play className={cn("h-2.5 w-2.5", userAction?.status === 'Watching' ? "fill-current" : "")} />
+                  {isProcessing && userAction?.status === 'Watching' ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Play className={cn("h-2.5 w-2.5", userAction?.status === 'Watching' ? "fill-current" : "")} />}
                   <span className="tracking-tight whitespace-nowrap">Watching</span>
                 </button>
                 <button
                   onClick={() => handleStatusChange(userAction?.status === 'Completed' ? null : 'Completed')}
+                  disabled={isProcessing}
                   className={cn(
                     "flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2.5 text-[9px] font-black uppercase transition-all",
-                    userAction?.status === 'Completed' ? "bg-green-600 text-white shadow-lg shadow-green-500/20" : "bg-slate-800/90 text-white backdrop-blur-md hover:bg-slate-700"
+                    userAction?.status === 'Completed' ? "bg-green-600 text-white shadow-lg shadow-green-500/20" : "bg-slate-800/90 text-white backdrop-blur-md hover:bg-slate-700",
+                    isProcessing && "opacity-50 cursor-not-allowed"
                   )}
                 >
-                  <CheckCircle className="h-2.5 w-2.5" />
+                  {isProcessing && userAction?.status === 'Completed' ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <CheckCircle className="h-2.5 w-2.5" />}
                   <span className="tracking-tight whitespace-nowrap">Watched</span>
                 </button>
               </div>
               <button
                 onClick={() => handleStatusChange(userAction?.status === 'Plan to Watch' ? null : 'Plan to Watch')}
+                disabled={isProcessing}
                 className={cn(
                   "flex w-full items-center justify-center gap-1.5 rounded-lg py-2.5 text-[9px] font-black uppercase transition-all border",
                   userAction?.status === 'Plan to Watch' 
                     ? "bg-yellow-400 text-slate-950 border-yellow-400 shadow-lg shadow-yellow-400/20" 
-                    : "bg-slate-800/90 text-white backdrop-blur-md border-transparent hover:bg-slate-700 hover:border-slate-600"
+                    : "bg-slate-800/90 text-white backdrop-blur-md border-transparent hover:bg-slate-700 hover:border-slate-600",
+                  isProcessing && "opacity-50 cursor-not-allowed"
                 )}
               >
-                {userAction?.status === 'Plan to Watch' ? <BookmarkCheck className="h-3 w-3" /> : <BookmarkPlus className="h-3 w-3" />}
+                {isProcessing && userAction?.status === 'Plan to Watch' ? <Loader2 className="h-3 w-3 animate-spin" /> : (userAction?.status === 'Plan to Watch' ? <BookmarkCheck className="h-3 w-3" /> : <BookmarkPlus className="h-3 w-3" />)}
                 <span className="tracking-tight whitespace-nowrap">{userAction?.status === 'Plan to Watch' ? 'In Watchlist' : 'Add to Watchlist'}</span>
               </button>
             </motion.div>
