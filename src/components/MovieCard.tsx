@@ -20,19 +20,25 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
   const [isHovered, setIsHovered] = useState(false);
 
   useEffect(() => {
+    if (!user) return;
+
     const unsubActions = onSnapshot(collection(db, `recommendations/${rec.id}/actions`), (snapshot) => {
       setActions(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as UserAction)));
+    }, (error) => {
+      console.warn('Silent listener error (actions):', error.message);
     });
     
     const unsubRatings = onSnapshot(collection(db, `recommendations/${rec.id}/ratings`), (snapshot) => {
       setRatings(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as UserAction)));
+    }, (error) => {
+      console.warn('Silent listener error (ratings):', error.message);
     });
 
     return () => {
       unsubActions();
       unsubRatings();
     };
-  }, [rec.id]);
+  }, [rec.id, user?.uid]);
 
   const userAction = user ? actions.find(a => a.userId === user.uid) : null;
   const userRating = user ? ratings.find(r => r.userId === user.uid) : null;

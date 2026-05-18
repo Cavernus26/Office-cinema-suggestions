@@ -23,11 +23,10 @@ service cloud.firestore {
         && data.comment is string && data.comment.size() <= 2000;
     }
 
-    function isValidRating(data) {
-      return data.keys().hasAll(['userId', 'rating', 'recommendationId', 'updatedAt'])
-        && data.userId == request.auth.uid
-        && data.rating is int && data.rating >= 1 && data.rating <= 5
-        && data.recommendationId is string;
+    function isNotAuthor(recId) {
+      // Use the parent path variable if available, or fetch
+      let rec = get(/databases/$(database)/documents/recommendations/$(recId));
+      return rec != null && rec.data.authorId != request.auth.uid;
     }
 
     // -------------------------------------------------------------------------
@@ -41,11 +40,9 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isSignedIn();
-      // Owners can update everything. 
-      // Non-owners can update ONLY the author's aggregate rating stats.
       allow update: if isSignedIn() && (
         isOwner(userId) || 
-        incoming().diff(existing()).affectedKeys().hasOnly(['avgRecommendationRating', 'totalRecommendationRatingSum', 'totalRecommendationRatingCount'])
+        incoming().diff(existing()).affectedKeys().hasOnly(['avgRecommendationRating', 'totalRecommendationRatingSum', 'totalRecommendationRatingCount', 'recsCount', 'watchedCount', 'currentlyWatching'])
       );
       allow create: if isOwner(userId);
     }
@@ -56,30 +53,32 @@ service cloud.firestore {
     }
 
     match /recommendations/{recId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null;
-      allow delete: if request.auth != null && resource.data.authorId == request.auth.uid;
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidRecommendation(incoming());
+      allow delete: if isSignedIn() && existing().authorId == request.auth.uid;
       
-      allow update: if request.auth != null && (
-        resource.data.authorId == request.auth.uid || 
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['averageRating', 'ratingCount'])
+      allow update: if isSignedIn() && (
+        existing().authorId == request.auth.uid || 
+        incoming().diff(existing()).affectedKeys().hasOnly(['averageRating', 'ratingCount'])
       );
 
       match /ratings/{userId} {
-        allow read: if request.auth != null;
+        allow read: if isSignedIn();
         
-        allow create, update: if request.auth != null
+        allow create, update: if isSignedIn() 
           && request.auth.uid == userId
-          && request.resource.data.rating >= 1
-          && request.resource.data.rating <= 5
-          // Ensure they don't rate their own. Using full path for get()
-          && get(/databases/$(database)/documents/recommendations/$(recId)).data.authorId != request.auth.uid;
+          && incoming().rating is number
+          && incoming().rating >= 1 
+          && incoming().rating <= 5
+          && isNotAuthor(recId);
 
-        allow delete: if request.auth != null && request.auth.uid == userId;
+        allow delete: if isOwner(userId);
       }
       
       match /actions/{actionId} {
-        allow read, write: if request.auth != null;
+        allow read: if isSignedIn();
+        // actionId is the user's UID in this subcollection
+        allow write: if isSignedIn() && (actionId == request.auth.uid || isOwner(resource.data.userId));
       }
     }
 

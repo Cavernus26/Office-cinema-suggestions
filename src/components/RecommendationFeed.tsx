@@ -19,12 +19,16 @@ export const RecommendationFeed: React.FC<RecommendationFeedProps> = ({ view = '
   const [filter, setFilter] = useState<'all' | 'movie' | 'tv'>('all');
 
   useEffect(() => {
+    if (!user) return;
+
     const q = query(collection(db, 'recommendations'), orderBy('createdAt', 'desc'));
     const unsubRecs = onSnapshot(q, (snapshot) => {
       setRecs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Recommendation)));
       setLoading(false);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'recommendations');
+      // Log but don't re-throw in onSnapshot error handler
+      console.warn('Snapshot error (recommendations):', error.message);
+      // We don't call handleFirestoreError here because it throws
     });
 
     let unsubActions = () => {};
@@ -33,7 +37,7 @@ export const RecommendationFeed: React.FC<RecommendationFeedProps> = ({ view = '
       unsubActions = onSnapshot(actionsQ, (snapshot) => {
         setUserActions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserAction)));
       }, (error) => {
-        handleFirestoreError(error, OperationType.LIST, 'userActions');
+        console.warn('Snapshot error (userActions):', error.message);
       });
     }
 
@@ -41,7 +45,7 @@ export const RecommendationFeed: React.FC<RecommendationFeedProps> = ({ view = '
       unsubRecs();
       unsubActions();
     };
-  }, [profile?.name]);
+  }, [user?.uid, profile?.name]);
 
   const filteredRecs = recs.filter(r => {
     const typeMatch = filter === 'all' || r.type === filter;
