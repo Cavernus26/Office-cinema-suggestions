@@ -32,10 +32,12 @@ export const RecommendationFeed: React.FC<RecommendationFeedProps> = ({ view = '
     });
 
     let unsubActions = () => {};
-    if (profile) {
-      const actionsQ = query(collection(db, 'userActions'), where('userName', '==', profile.name));
+    if (user) {
+      const actionsQ = query(collection(db, 'userActions'), where('userId', '==', user.uid));
       unsubActions = onSnapshot(actionsQ, (snapshot) => {
-        setUserActions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserAction)));
+        const actions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserAction));
+        console.log(`[Watchlist] Found ${actions.length} actions for user ${user.uid}`);
+        setUserActions(actions);
       }, (error) => {
         console.warn('Snapshot error (userActions):', error.message);
       });

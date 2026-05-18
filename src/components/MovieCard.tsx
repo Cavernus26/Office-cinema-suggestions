@@ -105,8 +105,10 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
       
       if (newStatus === 'Completed' && oldStatus !== 'Completed') {
         userUpdates.watchedCount = increment(1);
-      } else if (oldStatus === 'Completed' && newStatus !== 'Completed') {
+        console.log(`[Status] Incrementing watchedCount for user ${user.uid}`);
+      } else if (oldStatus === 'Completed' && (newStatus !== 'Completed' && newStatus !== null)) {
         userUpdates.watchedCount = increment(-1);
+        console.log(`[Status] Decrementing watchedCount for user ${user.uid}`);
       }
 
       if (newStatus === 'Watching') {
@@ -120,6 +122,7 @@ export const MovieCard: React.FC<MovieCardProps> = ({ rec, onDelete }) => {
       }
 
       if (Object.keys(userUpdates).length > 0) {
+        console.log('[Status] Updating user document with:', userUpdates);
         await updateDoc(userRef, userUpdates);
       }
     } catch (err) {

@@ -48,13 +48,21 @@ setPersistence(auth, browserLocalPersistence).catch((err) => {
 
 export async function testConnection() {
   try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
+    // Use a path that is publicly readable according to firestore.rules
+    await getDocFromServer(doc(db, 'usernames', 'connection_test'));
+    console.log("Firestore connection verified.");
   } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.warn("Firestore connection test result:", errorMessage);
+    
+    if (errorMessage.includes('the client is offline')) {
       console.error("CRITICAL: Firestore connection failed (client is offline).");
       console.error("This usually means CLOUD FIRESTORE is not enabled in your Firebase Project.");
       console.error("Please go to Firebase Console -> Build -> Firestore Database and click 'Create database'.");
       console.error("Make sure to pick 'Cloud Firestore', NOT 'Realtime Database'.");
+    } else if (errorMessage.includes('permission-denied')) {
+      // If we get permission denied on a public path, then connection is fine, rules might need adjustment
+      console.log("Firestore is online (permission denied on test path).");
     }
   }
 }

@@ -13,39 +13,40 @@ export const Leaderboard: React.FC = () => {
   useEffect(() => {
     if (!authUser) return;
 
-    const q = query(collection(db, 'users'), orderBy('recsCount', 'desc'), limit(24));
+    // Use a larger limit to ensure most users appear in the list
+    const q = query(collection(db, 'users'), limit(100));
     const unsub = onSnapshot(q, (snapshot) => {
-      setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const allUsers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      console.log(`[Leaderboard] Fetched ${allUsers.length} users`);
+      setUsers(allUsers);
     }, (error) => {
       console.warn('Silent listener error (users):', error.message);
     });
     return unsub;
   }, [authUser?.uid]);
 
-  // Sort users for display and filter duplicates (case-insensitive name)
-  const uniqueUsers = users.reduce((acc, current) => {
-    const nameKey = current.name.toLowerCase().trim();
-    if (!acc[nameKey]) {
-      acc[nameKey] = current;
-    } else {
-      // Keep the one with more recommendations or currently active session
-      const isCurrentSession = current.id === authUser?.uid || current.uid === authUser?.uid;
-      const isPrevSessionCurrent = acc[nameKey].id === authUser?.uid || acc[nameKey].uid === authUser?.uid;
-      
-      if (isCurrentSession) {
-        acc[nameKey] = current;
-      } else if (!isPrevSessionCurrent && (current.recsCount || 0) > (acc[nameKey].recsCount || 0)) {
-        acc[nameKey] = current;
-      }
-    }
+  // Deduplicate by ID and ensure current profile is included/updated
+  const uniqueUsersMap = users.reduce((acc, current) => {
+    acc[current.id] = current;
     return acc;
   }, {} as Record<string, any>);
 
-  const sortedUsers = (Object.values(uniqueUsers) as any[]).sort((a: any, b: any) => {
+  // Force include current profile if we have it and it's not in the snapshot
+  if (profile && authUser && !uniqueUsersMap[authUser.uid]) {
+    uniqueUsersMap[authUser.uid] = { id: authUser.uid, ...profile };
+  } else if (profile && authUser && uniqueUsersMap[authUser.uid]) {
+    // Merge local profile for immediate feedback
+    uniqueUsersMap[authUser.uid] = { ...uniqueUsersMap[authUser.uid], ...profile };
+  }
+
+  const sortedUsers = (Object.values(uniqueUsersMap) as any[]).sort((a: any, b: any) => {
     // Primary sort: recsCount
     const countDiff = (b.recsCount || 0) - (a.recsCount || 0);
     if (countDiff !== 0) return countDiff;
-    // Secondary sort: avgRating
+    // Secondary sort: watchedCount
+    const watchDiff = (b.watchedCount || 0) - (a.watchedCount || 0);
+    if (watchDiff !== 0) return watchDiff;
+    // Tertiary sort: avgRating
     return (b.avgRecommendationRating || 0) - (a.avgRecommendationRating || 0);
   });
 
