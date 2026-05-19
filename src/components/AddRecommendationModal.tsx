@@ -34,7 +34,7 @@ export const AddRecommendationModal: React.FC<AddModalProps> = ({ isOpen, onClos
       setError(null);
       try {
         const searchResults = await tmdbService.search(query);
-        setResults(searchResults.slice(0, 5));
+        setResults(searchResults);
         
         // Check if there was an error hidden in the response (our backend sends it)
         // Note: tmdbService.search returns [] on error, so we rely on console logs usually,
@@ -143,7 +143,7 @@ export const AddRecommendationModal: React.FC<AddModalProps> = ({ isOpen, onClos
                 />
                 
                 {/* Search Results */}
-                <div className="mt-4 space-y-3">
+                <div className="mt-4 space-y-3 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
                   {isSearching && (
                     <div className="flex items-center justify-center py-6">
                       <Loader2 className="h-8 w-8 animate-spin text-yellow-400" />
@@ -162,7 +162,7 @@ export const AddRecommendationModal: React.FC<AddModalProps> = ({ isOpen, onClos
                     </div>
                   )}
 
-                    {results.slice(0, 5).map((item) => (
+                    {results.map((item) => (
                       <button
                         key={item.id}
                         type="button"
@@ -186,7 +186,7 @@ export const AddRecommendationModal: React.FC<AddModalProps> = ({ isOpen, onClos
                         className="h-20 w-14 rounded-xl object-cover shadow-lg"
                       />
                       <div>
-                        <div className="font-black uppercase text-sm text-slate-100 leading-tight tracking-wide">{item.title || item.name}</div>
+                        <div className="font-black uppercase text-sm text-slate-100 leading-tight tracking-wide line-clamp-2">{item.title || item.name}</div>
                         <div className="text-[10px] font-black text-yellow-400 uppercase tracking-widest mt-1">
                           {item.media_type === 'movie' ? 'Movie' : 'TV Show'} • {(item.release_date || item.first_air_date || '').split('-')[0]}
                         </div>
