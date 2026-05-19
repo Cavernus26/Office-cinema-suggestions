@@ -38,7 +38,7 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isSignedIn(); 
       allow update, delete: if isSignedIn() && (existing().authorId == request.auth.uid);
-      allow update: if isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['averageRating', 'ratingCount', 'genres']);
+      allow update: if isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['averageRating', 'ratingCount', 'genres', 'overview']);
 
       // Subcollections: Ratings and Actions
       match /ratings/{userId} {

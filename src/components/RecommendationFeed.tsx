@@ -61,7 +61,7 @@ export const RecommendationFeed: React.FC<RecommendationFeedProps> = ({ view = '
   useEffect(() => {
     if (loading || recs.length === 0) return;
 
-    const itemsToPatch = recs.filter(r => (!r.genres || r.genres.length === 0 || !r.overview) && !attemptedPatches.has(r.id));
+    const itemsToPatch = recs.filter(r => (r.genres === undefined || r.overview === undefined) && !attemptedPatches.has(r.id));
     if (itemsToPatch.length === 0) return;
 
     const patchGenres = async () => {
