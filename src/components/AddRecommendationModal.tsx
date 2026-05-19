@@ -71,6 +71,7 @@ export const AddRecommendationModal: React.FC<AddModalProps> = ({ isOpen, onClos
         seasons: selectedItem.number_of_seasons || null,
         episodesCount: selectedItem.number_of_episodes || null,
         voteAverage: selectedItem.vote_average || null,
+        overview: selectedItem.overview || '',
         comment,
         authorId: auth.currentUser.uid,
         authorName: profile.name,

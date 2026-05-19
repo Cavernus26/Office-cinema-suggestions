@@ -25,6 +25,7 @@ export interface Recommendation {
   backdropPath?: string;
   year: string;
   genres?: string[];
+  overview?: string;
   runtime?: number;
   seasons?: number;
   episodesCount?: number;

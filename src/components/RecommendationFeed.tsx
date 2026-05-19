@@ -61,11 +61,11 @@ export const RecommendationFeed: React.FC<RecommendationFeedProps> = ({ view = '
   useEffect(() => {
     if (loading || recs.length === 0) return;
 
-    const itemsToPatch = recs.filter(r => (!r.genres || r.genres.length === 0) && !attemptedPatches.has(r.id));
+    const itemsToPatch = recs.filter(r => (!r.genres || r.genres.length === 0 || !r.overview) && !attemptedPatches.has(r.id));
     if (itemsToPatch.length === 0) return;
 
     const patchGenres = async () => {
-      console.log(`[Migration] Found ${itemsToPatch.length} items missing genres. Patching...`);
+      console.log(`[Migration] Found ${itemsToPatch.length} items missing metadata (genres/overview). Patching...`);
       const { tmdbService } = await import('../services/tmdb');
       const { doc, updateDoc } = await import('firebase/firestore');
       const { db } = await import('../lib/firebase');
@@ -80,15 +80,23 @@ export const RecommendationFeed: React.FC<RecommendationFeedProps> = ({ view = '
       for (const item of itemsToPatch) {
         try {
           const details = await tmdbService.getDetails(item.tmdbId, item.type);
-          if (details && details.genres) {
-            const genres = details.genres.map((g: any) => {
-              if (g.name === 'Science Fiction') return 'Sci-Fi';
-              if (g.name === 'Sci-Fi & Fantasy') return 'Sci-Fi';
-              return g.name;
-            });
+          if (details) {
+            const updates: any = {};
+            if (!item.genres || item.genres.length === 0) {
+              updates.genres = details.genres?.map((g: any) => {
+                if (g.name === 'Science Fiction') return 'Sci-Fi';
+                if (g.name === 'Sci-Fi & Fantasy') return 'Sci-Fi';
+                return g.name;
+              }) || [];
+            }
+            if (!item.overview) {
+              updates.overview = details.overview || '';
+            }
             
-            await updateDoc(doc(db, 'recommendations', item.id), { genres });
-            console.log(`[Migration] Patched genres for: ${item.title}`);
+            if (Object.keys(updates).length > 0) {
+              await updateDoc(doc(db, 'recommendations', item.id), updates);
+              console.log(`[Migration] Patched metadata for: ${item.title}`);
+            }
           }
         } catch (err) {
           console.error(`[Migration] Failed to patch ${item.title}:`, err);
